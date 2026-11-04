@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/widget_bg" android:gravity="center"
+    android:orientation="horizontal" android:padding="6dp">
+    <ImageView
+        android:id="@+id/w_search"
+        android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+        android:padding="11dp" android:src="@drawable/ic_w_search" />
+    <ImageView
+        android:id="@+id/w_voice"
+        android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+        android:padding="11dp" android:src="@drawable/ic_w_mic" />
+    <ImageView
+        android:id="@+id/w_ai"
+        android:layout_width="0dp" android:layout_height="44dp" android:layout_weight="1"
+        android:padding="11dp" android:src="@drawable/ic_w_ai" />
+</LinearLayout>

@@ -1,0 +1,1139 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: linear-gradient(to bottom, #87CEEB 0%, #E0F6FF 100%);
+    font-family: Arial, sans-serif;
+}
+
+#gameContainer {
+    position: relative;
+    width: 1000px;
+    height: 600px;
+    background: linear-gradient(to bottom, #87CEEB 0%, #B0E2FF 60%, #E0F6FF 100%);
+    border: 5px solid #654321;
+    overflow: hidden;
+}
+
+.cloud {
+    position: absolute;
+    background: white;
+    border-radius: 100px;
+    opacity: 0.8;
+    animation: floatCloud linear infinite;
+}
+
+.cloud::before,
+.cloud::after {
+    content: '';
+    position: absolute;
+    background: white;
+    border-radius: 100px;
+}
+
+.cloud1 {
+    width: 80px;
+    height: 30px;
+    top: 50px;
+    animation-duration: 45s;
+}
+
+.cloud1::before {
+    width: 50px;
+    height: 40px;
+    top: -20px;
+    left: 10px;
+}
+
+.cloud1::after {
+    width: 60px;
+    height: 35px;
+    top: -15px;
+    right: 10px;
+}
+
+.cloud2 {
+    width: 100px;
+    height: 35px;
+    top: 120px;
+    animation-duration: 60s;
+    animation-delay: -20s;
+}
+
+.cloud2::before {
+    width: 60px;
+    height: 45px;
+    top: -25px;
+    left: 15px;
+}
+
+.cloud2::after {
+    width: 70px;
+    height: 40px;
+    top: -20px;
+    right: 15px;
+}
+
+.cloud3 {
+    width: 70px;
+    height: 25px;
+    top: 80px;
+    animation-duration: 50s;
+    animation-delay: -40s;
+}
+
+.cloud3::before {
+    width: 45px;
+    height: 35px;
+    top: -18px;
+    left: 10px;
+}
+
+.cloud3::after {
+    width: 50px;
+    height: 30px;
+    top: -15px;
+    right: 10px;
+}
+
+@keyframes floatCloud {
+    from {
+        left: -150px;
+    }
+    to {
+        left: 1050px;
+    }
+}
+
+.bird {
+    position: absolute;
+    width: 48px;
+    height: 26px;
+    animation: flyBird linear infinite, birdFloat 2.5s ease-in-out infinite;
+    opacity: 0;
+    filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.25));
+}
+
+@keyframes flyBird {
+    0% {
+        left: -55px;
+        opacity: 1;
+    }
+    100% {
+        left: 1055px;
+        opacity: 1;
+    }
+}
+
+@keyframes birdFloat {
+    0%, 100% {
+        transform: translateY(0) rotate(0deg);
+    }
+    25% {
+        transform: translateY(-3px) rotate(-0.8deg);
+    }
+    75% {
+        transform: translateY(3px) rotate(0.8deg);
+    }
+}
+
+/* Body - sleek aerodynamic shape */
+.bird::before {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 8px;
+    background:
+        radial-gradient(ellipse at 28% 32%, rgba(160, 190, 220, 0.35) 0%, transparent 55%),
+        radial-gradient(ellipse at 35% 40%, #6b8ba8 0%, #4a6278 40%, #2d3e50 75%, #1a252f 100%);
+    clip-path: path('M 0.8,4.2 Q 0,3 0.6,1.8 Q 1.8,0.6 4.2,0.3 Q 7.2,0 9.6,0.6 Q 11.4,1.5 11.7,3 Q 12,4.8 10.8,6.3 Q 9,7.8 6,8.1 Q 3,7.8 1.2,6.6 Q 0.6,5.4 0.8,4.2 Z');
+    top: 8px;
+    left: 18px;
+    z-index: 3;
+    box-shadow: inset -2px -2px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* Head with eye detail */
+.bird::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 7px;
+    background:
+        radial-gradient(circle at 2.5px 2.5px, #ffffff 0%, #ffffff 0.7px, transparent 1.2px),
+        radial-gradient(circle at 28% 28%, rgba(160, 190, 220, 0.3) 0%, transparent 50%),
+        radial-gradient(ellipse at 30% 35%, #6b8ba8 0%, #4a6278 45%, #2d3e50 80%, #1a252f 100%);
+    clip-path: path('M 0,3.3 Q 0,1.8 1.2,0.9 Q 3,0 5.4,0 Q 7.2,0.3 8.4,1.2 Q 9.6,2.4 9.3,3.6 Q 9,4.8 7.5,5.7 Q 5.4,6.6 3,6.3 Q 1.2,6 0.3,4.8 Q 0,4.2 0,3.3 Z');
+    top: 7.8px;
+    left: 27.6px;
+    z-index: 4;
+    box-shadow: inset -1.2px -1.2px 2.5px rgba(0, 0, 0, 0.25);
+}
+
+/* Tail feathers - layered */
+.bird .tail {
+    position: absolute;
+    width: 11px;
+    height: 8px;
+    top: 9.5px;
+    left: 11px;
+    z-index: 1;
+    display: block;
+}
+
+.bird .tail::before {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 3px;
+    background:
+        linear-gradient(85deg, #4a6278 0%, #6b8ba8 25%, #5a7a95 50%, rgba(90, 122, 149, 0.3) 85%, transparent 100%);
+    clip-path: path('M 0,1.5 Q 1.8,0.3 4.8,0 Q 7.2,0 9,0.6 Q 9.6,0.9 9.3,1.8 Q 7.8,2.7 4.8,2.7 Q 1.8,2.4 0.3,1.8 Q 0,1.7 0,1.5 Z');
+    top: 0.6px;
+    left: 0;
+    transform: rotate(-18deg);
+    filter: drop-shadow(0 0.6px 1.2px rgba(0,0,0,0.15));
+}
+
+.bird .tail::after {
+    content: '';
+    position: absolute;
+    width: 10px;
+    height: 3px;
+    background:
+        linear-gradient(85deg, #4a6278 0%, #6b8ba8 25%, #5a7a95 50%, rgba(90, 122, 149, 0.3) 85%, transparent 100%);
+    clip-path: path('M 0,1.2 Q 1.8,0 4.8,0 Q 7.2,0.3 9,0.9 Q 9.6,1.5 9,2.4 Q 7.2,3 4.8,2.7 Q 1.8,2.4 0.3,1.8 Q 0,1.5 0,1.2 Z');
+    bottom: 0.6px;
+    left: 0;
+    transform: rotate(18deg);
+    filter: drop-shadow(0 0.6px 1.2px rgba(0,0,0,0.15));
+}
+
+/* Left wing - detailed with feather segments */
+.bird .wingLeft {
+    position: absolute;
+    width: 22px;
+    height: 16px;
+    top: 6px;
+    left: 1px;
+    transform-origin: 82% 50%;
+    animation: flapLeft 0.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+    display: block;
+    z-index: 1;
+    filter: drop-shadow(0 1.5px 2px rgba(0,0,0,0.25));
+}
+
+/* Wing base - secondary feathers with color bands */
+.bird .wingLeft::before {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 12px;
+    background:
+        repeating-linear-gradient(118deg,
+            transparent 0px,
+            transparent 1.5px,
+            rgba(0, 0, 0, 0.05) 1.5px,
+            rgba(0, 0, 0, 0.05) 1.8px),
+        radial-gradient(ellipse at 20% 35%, rgba(200, 220, 240, 0.22) 0%, transparent 70%),
+        radial-gradient(ellipse at 15% 55%, rgba(160, 190, 220, 0.12) 0%, transparent 55%),
+        linear-gradient(120deg,
+            #4a6278 0%,
+            #6b8ba8 18%,
+            #7a95b5 25%,
+            #6b8ba8 35%,
+            #5a7a95 50%,
+            #4a6278 65%,
+            #34495e 78%,
+            #2d3e50 90%,
+            #1a252f 100%);
+    clip-path: path('M 0.3,5.7 Q 0,4.5 0.3,2.7 Q 0.9,1.2 3,0.6 Q 6,0 10.2,0.12 Q 13.8,0.48 16.8,1.5 Q 19.2,2.7 20.1,4.5 Q 20.4,6 19.5,7.8 Q 17.4,9.9 13.2,11.1 Q 8.4,11.7 4.2,10.2 Q 1.2,8.7 0.3,5.7 Z');
+    top: 1.8px;
+    left: 0;
+    box-shadow:
+        inset -1.8px -2.4px 3.6px rgba(0, 0, 0, 0.25),
+        inset 1.2px 1.2px 2.4px rgba(255, 255, 255, 0.1);
+}
+
+/* Wing tips - primary feathers with detailed finger separation */
+.bird .wingLeft::after {
+    content: '';
+    position: absolute;
+    width: 15.5px;
+    height: 10.8px;
+    background:
+        repeating-linear-gradient(92deg,
+            transparent 0px,
+            transparent 1.7px,
+            rgba(0, 0, 0, 0.1) 1.7px,
+            rgba(0, 0, 0, 0.1) 2.1px),
+        radial-gradient(ellipse at 45% 25%, rgba(180, 200, 220, 0.16) 0%, transparent 60%),
+        linear-gradient(105deg,
+            transparent 0%,
+            #7a95b5 12%,
+            #6b8ba8 25%,
+            #5a7a95 40%,
+            #4a6278 55%,
+            #34495e 70%,
+            #2d3e50 85%,
+            rgba(26, 37, 47, 0.4) 97%,
+            transparent 100%);
+    clip-path: path('M 0.3,5.4 Q 1.8,2.4 4.5,0.9 Q 7.2,0 10.2,0 Q 12.6,0.3 14.4,1.5 Q 15.6,3 15.3,5.1 Q 14.4,7.2 12,8.7 Q 9,10.2 5.7,10.2 Q 3,9.3 1.2,7.2 Q 0,6 0.3,5.4 Z');
+    top: 0px;
+    right: -3.6px;
+    opacity: 0.97;
+    box-shadow: 0 0.6px 1.2px rgba(0,0,0,0.12);
+}
+
+/* Right wing - detailed with feather segments */
+.bird .wingRight {
+    position: absolute;
+    width: 22px;
+    height: 16px;
+    top: 6px;
+    right: 1px;
+    transform-origin: 18% 50%;
+    animation: flapRight 0.5s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
+    display: block;
+    z-index: 1;
+    filter: drop-shadow(0 1.5px 2px rgba(0,0,0,0.25));
+}
+
+/* Wing base - secondary feathers with color bands */
+.bird .wingRight::before {
+    content: '';
+    position: absolute;
+    width: 20px;
+    height: 12px;
+    background:
+        repeating-linear-gradient(62deg,
+            transparent 0px,
+            transparent 1.5px,
+            rgba(0, 0, 0, 0.05) 1.5px,
+            rgba(0, 0, 0, 0.05) 1.8px),
+        radial-gradient(ellipse at 80% 35%, rgba(200, 220, 240, 0.22) 0%, transparent 70%),
+        radial-gradient(ellipse at 85% 55%, rgba(160, 190, 220, 0.12) 0%, transparent 55%),
+        linear-gradient(60deg,
+            #4a6278 0%,
+            #6b8ba8 18%,
+            #7a95b5 25%,
+            #6b8ba8 35%,
+            #5a7a95 50%,
+            #4a6278 65%,
+            #34495e 78%,
+            #2d3e50 90%,
+            #1a252f 100%);
+    clip-path: path('M 19.7,5.7 Q 20,4.5 19.7,2.7 Q 19.1,1.2 17,0.6 Q 14,0 9.8,0.12 Q 6.2,0.48 3.2,1.5 Q 0.8,2.7 -0.1,4.5 Q -0.4,6 0.5,7.8 Q 2.6,9.9 6.8,11.1 Q 11.6,11.7 15.8,10.2 Q 18.8,8.7 19.7,5.7 Z');
+    top: 1.8px;
+    right: 0;
+    box-shadow:
+        inset 1.8px -2.4px 3.6px rgba(0, 0, 0, 0.25),
+        inset -1.2px 1.2px 2.4px rgba(255, 255, 255, 0.1);
+}
+
+/* Wing tips - primary feathers with detailed finger separation */
+.bird .wingRight::after {
+    content: '';
+    position: absolute;
+    width: 15.5px;
+    height: 10.8px;
+    background:
+        repeating-linear-gradient(88deg,
+            transparent 0px,
+            transparent 1.7px,
+            rgba(0, 0, 0, 0.1) 1.7px,
+            rgba(0, 0, 0, 0.1) 2.1px),
+        radial-gradient(ellipse at 55% 25%, rgba(180, 200, 220, 0.16) 0%, transparent 60%),
+        linear-gradient(75deg,
+            transparent 0%,
+            #7a95b5 12%,
+            #6b8ba8 25%,
+            #5a7a95 40%,
+            #4a6278 55%,
+            #34495e 70%,
+            #2d3e50 85%,
+            rgba(26, 37, 47, 0.4) 97%,
+            transparent 100%);
+    clip-path: path('M 15.2,5.4 Q 13.7,2.4 11,0.9 Q 8.3,0 5.3,0 Q 2.9,0.3 1.1,1.5 Q -0.1,3 0.2,5.1 Q 1.1,7.2 3.5,8.7 Q 6.5,10.2 9.8,10.2 Q 12.5,9.3 14.3,7.2 Q 15.5,6 15.2,5.4 Z');
+    top: 0px;
+    left: -3.6px;
+    opacity: 0.97;
+    box-shadow: 0 0.6px 1.2px rgba(0,0,0,0.12);
+}
+
+@keyframes flapLeft {
+    0%, 100% {
+        transform: rotate(-26deg) translateY(0) scaleY(1);
+    }
+    50% {
+        transform: rotate(-54deg) translateY(-5px) scaleY(0.88);
+    }
+}
+
+@keyframes flapRight {
+    0%, 100% {
+        transform: rotate(26deg) translateY(0) scaleY(1);
+    }
+    50% {
+        transform: rotate(54deg) translateY(-5px) scaleY(0.88);
+    }
+}
+
+.fighter {
+    position: absolute;
+    width: 120px;
+    height: 180px;
+    bottom: 100px;
+    pointer-events: none;
+}
+
+#redFighter {
+    left: 100px;
+}
+
+#blueFighter {
+    right: 100px;
+}
+
+canvas.stickFigure {
+    width: 100%;
+    height: 100%;
+}
+
+.healthBar {
+    position: absolute;
+    top: 20px;
+    height: 30px;
+    background: #333;
+    border: 3px solid #000;
+}
+
+#redHealthBar {
+    left: 20px;
+    width: 300px;
+}
+
+#blueHealthBar {
+    right: 20px;
+    width: 300px;
+}
+
+.healthFill {
+    height: 100%;
+    width: 100%;
+    transition: width 0.3s;
+}
+
+#redHealthFill {
+    background: red;
+}
+
+#blueHealthFill {
+    background: blue;
+}
+
+.healthText {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 16px;
+    text-shadow: 1px 1px 2px black;
+}
+
+/* Stamina bars for blocking */
+.staminaBar {
+    position: absolute;
+    height: 12px;
+    background: #333;
+    border: 2px solid #000;
+    width: 300px;
+}
+
+#redStamina {
+    left: 20px;
+    top: 55px;
+}
+
+#blueStamina {
+    right: 20px;
+    top: 55px;
+}
+
+.staminaFill {
+    height: 100%;
+    width: 100%;
+    transition: width 0.1s, background 0.3s;
+}
+
+/* Combo counter display */
+.comboCounter {
+    position: absolute;
+    font-size: 28px;
+    font-weight: bold;
+    color: #ffff00;
+    text-shadow: 2px 2px 4px #000, -2px -2px 4px #000;
+    z-index: 100;
+    display: none;
+}
+
+.comboCounter.red {
+    left: 20px;
+    top: 100px;
+}
+
+.comboCounter.blue {
+    right: 20px;
+    top: 100px;
+}
+
+@keyframes popIn {
+    0% {
+        transform: scale(0.5);
+        opacity: 0;
+    }
+    50% {
+        transform: scale(1.1);
+    }
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.ground {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 100px;
+    background: #228B22;
+    border-top: 5px solid #006400;
+}
+
+#gameOver {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 40px;
+    border-radius: 10px;
+    text-align: center;
+    display: none;
+    z-index: 100;
+}
+
+#gameOver h1 {
+    font-size: 48px;
+    margin-bottom: 20px;
+}
+
+#gameOver button {
+    padding: 15px 30px;
+    font-size: 20px;
+    cursor: pointer;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    margin-top: 20px;
+}
+
+#gameOver button:hover {
+    background: #45a049;
+}
+
+.controls {
+    position: absolute;
+    bottom: 10px;
+    font-size: 12px;
+    color: white;
+    text-shadow: 1px 1px 2px black;
+}
+
+#redControls {
+    left: 20px;
+}
+
+#blueControls {
+    right: 20px;
+}
+
+/* ESC Menu Styles */
+#escMenu {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 200;
+}
+
+#escMenu.active {
+    display: flex;
+}
+
+.menuContent {
+    background: #2a2a2a;
+    padding: 40px;
+    border-radius: 15px;
+    text-align: center;
+    min-width: 400px;
+}
+
+.menuContent h2 {
+    color: white;
+    margin-bottom: 30px;
+    font-size: 36px;
+}
+
+.menuButton {
+    display: block;
+    width: 100%;
+    padding: 15px 30px;
+    margin: 15px 0;
+    font-size: 20px;
+    cursor: pointer;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    transition: background 0.3s;
+}
+
+.menuButton:hover {
+    background: #45a049;
+}
+
+.menuButton.secondary {
+    background: #666;
+}
+
+.menuButton.secondary:hover {
+    background: #555;
+}
+
+/* Modal Styles */
+.modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 250;
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modalContent {
+    background: #2a2a2a;
+    padding: 40px;
+    border-radius: 15px;
+    min-width: 450px;
+    max-width: 600px;
+    color: white;
+}
+
+.modalContent h2 {
+    margin-bottom: 25px;
+    font-size: 28px;
+    text-align: center;
+}
+
+.modalContent input {
+    width: 100%;
+    padding: 12px;
+    margin: 10px 0;
+    font-size: 16px;
+    border: 2px solid #555;
+    border-radius: 5px;
+    background: #1a1a1a;
+    color: white;
+}
+
+.modalContent input:focus {
+    outline: none;
+    border-color: #4CAF50;
+}
+
+.modalButtonGroup {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.modalButton {
+    flex: 1;
+    padding: 12px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border: none;
+    border-radius: 5px;
+    transition: background 0.3s;
+}
+
+.modalButton.primary {
+    background: #4CAF50;
+    color: white;
+}
+
+.modalButton.primary:hover {
+    background: #45a049;
+}
+
+.modalButton.secondary {
+    background: #666;
+    color: white;
+}
+
+.modalButton.secondary:hover {
+    background: #555;
+}
+
+.userInfo {
+    text-align: center;
+    margin-bottom: 20px;
+    font-size: 18px;
+    color: #4CAF50;
+}
+
+.userList {
+    max-height: 300px;
+    overflow-y: auto;
+    margin: 20px 0;
+    background: #1a1a1a;
+    border-radius: 5px;
+    padding: 10px;
+}
+
+.userItem {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin: 5px 0;
+    background: #2a2a2a;
+    border-radius: 5px;
+}
+
+.userItem .username {
+    font-weight: bold;
+}
+
+.userItem .status {
+    font-size: 12px;
+    color: #888;
+}
+
+.userItem button {
+    padding: 8px 16px;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+}
+
+.userItem button:hover {
+    background: #45a049;
+}
+
+.duelNotification {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #ff9800;
+    color: white;
+    padding: 20px 30px;
+    border-radius: 10px;
+    z-index: 300;
+    display: none;
+    text-align: center;
+}
+
+.duelNotification.active {
+    display: block;
+}
+
+.duelNotification button {
+    margin: 10px 5px 0;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.duelNotification .accept {
+    background: #4CAF50;
+    color: white;
+}
+
+.duelNotification .decline {
+    background: #f44336;
+    color: white;
+}
+
+.errorMessage {
+    color: #f44336;
+    text-align: center;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+.successMessage {
+    color: #4CAF50;
+    text-align: center;
+    margin-top: 10px;
+    font-size: 14px;
+}
+
+#searchInput {
+    margin-bottom: 10px;
+}
+
+/* Character Selection Styles */
+.characterMessage {
+    text-align: center;
+    font-size: 16px;
+    margin-bottom: 20px;
+    min-height: 24px;
+}
+
+.characterGrid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin: 20px 0;
+    list-style: none;
+    padding: 0;
+    margin-left: 0;
+}
+
+.characterCard {
+    background: #1a1a1a;
+    border: 3px solid #444;
+    border-radius: 10px;
+    padding: 15px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s;
+    list-style: none;
+}
+
+.characterCard:hover {
+    border-color: #4CAF50;
+    transform: translateY(-5px);
+    box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+}
+
+.characterCard.selected {
+    border-color: #4CAF50;
+    background: #2a3a2a;
+    box-shadow: 0 0 20px rgba(76, 175, 80, 0.5);
+}
+
+.characterPreview {
+    width: 100%;
+    height: 120px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    position: relative;
+    overflow: hidden;
+}
+
+.characterPreview::before {
+    content: '';
+    position: absolute;
+    width: 40%;
+    height: 80%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+}
+
+.characterPreview.brawler {
+    background: linear-gradient(135deg, #dc143c 0%, #ff4500 100%);
+}
+
+.characterPreview.brawler::before {
+    background: rgba(0, 0, 0, 0.2);
+    width: 50%;
+    height: 85%;
+}
+
+.characterPreview.speedster {
+    background: linear-gradient(135deg, #1e90ff 0%, #00bfff 100%);
+}
+
+.characterPreview.speedster::before {
+    background: rgba(0, 0, 0, 0.2);
+    width: 35%;
+    height: 75%;
+}
+
+.characterPreview.balanced {
+    background: linear-gradient(135deg, #9370db 0%, #ba55d3 100%);
+}
+
+.characterPreview.balanced::before {
+    background: rgba(0, 0, 0, 0.2);
+    width: 42%;
+    height: 80%;
+}
+
+.characterPreview.heavyTanker {
+    background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+}
+
+.characterPreview.heavyTanker::before {
+    background: rgba(0, 0, 0, 0.2);
+    width: 55%;
+    height: 90%;
+}
+
+.characterPreview.agileNinja {
+    background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);
+}
+
+.characterPreview.agileNinja::before {
+    background: rgba(255, 255, 255, 0.1);
+    width: 40%;
+    height: 78%;
+}
+
+.characterPreview.mysticWarrior {
+    background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+}
+
+.characterPreview.mysticWarrior::before {
+    background: rgba(0, 0, 0, 0.15);
+    width: 45%;
+    height: 82%;
+}
+
+.characterPreview.flameStriker {
+    background: linear-gradient(135deg, Orange 0%, #ff9933 100%);
+}
+
+.characterPreview.flameStriker::before {
+    background: rgba(0, 0, 0, 0.2);
+    width: 42%;
+    height: 80%;
+}
+
+.characterPreview.iceKnight {
+    background: linear-gradient(135deg, Teal 0%, #7fffd4 100%);
+}
+
+.characterPreview.iceKnight::before {
+    background: rgba(0, 0, 0, 0.2);
+    width: 48%;
+    height: 84%;
+}
+
+.characterPreview.shadowAssassin {
+    background: linear-gradient(135deg, Purple 0%, #6a0dad 100%);
+}
+
+.characterPreview.shadowAssassin::before {
+    background: rgba(0, 0, 0, 0.25);
+    width: 40%;
+    height: 78%;
+}
+
+.characterPreview.sakuraWarrior {
+    background: linear-gradient(135deg, Pink 0%, #ffb6c1 100%);
+}
+
+.characterPreview.sakuraWarrior::before {
+    background: rgba(0, 0, 0, 0.2);
+    width: 41%;
+    height: 79%;
+}
+
+.characterPreview.thunderMonk {
+    background: linear-gradient(135deg, Yellow 0%, #fff44f 100%);
+}
+
+.characterPreview.thunderMonk::before {
+    background: rgba(0, 0, 0, 0.15);
+    width: 38%;
+    height: 76%;
+}
+
+.characterPreview.stoneGuardian {
+    background: linear-gradient(135deg, #696969 0%, #a9a9a9 100%);
+}
+
+.characterPreview.stoneGuardian::before {
+    background: rgba(0, 0, 0, 0.3);
+    width: 58%;
+    height: 92%;
+}
+
+.characterPreview.crimsonDemon {
+    background: linear-gradient(135deg, #8b0000 0%, #b22222 100%);
+}
+
+.characterPreview.crimsonDemon::before {
+    background: rgba(0, 0, 0, 0.25);
+    width: 46%;
+    height: 82%;
+}
+
+.characterPreview.arcticFox {
+    background: linear-gradient(135deg, White 0%, #e6f2ff 100%);
+}
+
+.characterPreview.arcticFox::before {
+    background: rgba(0, 0, 0, 0.1);
+    width: 37%;
+    height: 75%;
+}
+
+.characterCard h3 {
+    font-size: 20px;
+    margin-bottom: 8px;
+    color: #fff;
+}
+
+.characterDesc {
+    font-size: 13px;
+    color: #aaa;
+    margin-bottom: 12px;
+    font-style: italic;
+}
+
+.characterStats {
+    font-size: 12px;
+    color: #ccc;
+}
+
+.characterStats .stat {
+    margin: 5px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Locked character cards */
+.characterCard.locked {
+    opacity: 0.6;
+    cursor: not-allowed;
+    position: relative;
+}
+
+.characterCard.locked:hover {
+    border-color: #666;
+    transform: none;
+    box-shadow: none;
+}
+
+.lockOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: bold;
+    color: #ff6b6b;
+    border-radius: 10px;
+    pointer-events: none;
+}
+
+/* Shop specific styles */
+.shopCard {
+    position: relative;
+}
+
+.shopCard.owned {
+    border-color: #4CAF50;
+}
+
+.skinPrice {
+    font-size: 16px;
+    font-weight: bold;
+    margin: 10px 0;
+}
+
+.shopCard button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+    font-size: 14px;
+    font-weight: bold;
+    background: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.shopCard button:hover:not(:disabled) {
+    background: #45a049;
+    transform: translateY(-2px);
+}
+
+.shopCard button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+#shopMessage {
+    margin: 10px 0;
+    padding: 10px;
+    border-radius: 5px;
+    text-align: center;
+}
+
+.characterStats .stat span {
+    color: #4CAF50;
+    font-weight: bold;
+}
+
+#characterSelectModal .modalContent {
+    max-width: 800px;
+    min-width: 700px;
+    max-height: 90vh;
+    overflow-y: auto;
+}
+
+#shopModal .modalContent {
+    max-width: 800px;
+    min-width: 700px;
+    max-height: 90vh;
+    overflow-y: auto;
+}

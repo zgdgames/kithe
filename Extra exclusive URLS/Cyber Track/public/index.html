@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" type="image/png" href="cybertrackfavicon.png">
+<title>Cyber Track</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
+<link rel="preload" href="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js" as="script">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ── HOME ── -->
+<div id="scr-home" class="screen active">
+  <div class="home-bg-grid"></div>
+  <div class="home-content">
+    <div class="logo-wrap">
+      <span class="logo-cyber">CYBER</span>
+      <span class="logo-track">TRACK</span>
+    </div>
+    <div class="tagline">LAST CAR STANDING · VOTE THE TRACK · UP TO 30 RACERS</div>
+    <button id="btn-start" class="btn-big" onclick="goToGarage()">▶ START</button>
+    <div class="home-stats">WINS: <span id="home-wins">0</span></div>
+    <div class="home-creds">[ WASD or ARROWS · 30s VOTE INTERVALS · LAST CAR WINS ]</div>
+  </div>
+</div>
+
+<!-- ── GARAGE ── -->
+<div id="scr-garage" class="screen">
+  <canvas id="garage-canvas"></canvas>
+  <div class="garage-ui">
+    <div class="garage-header">
+      <div id="garage-header-left" style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;"></div>
+      <div class="garage-title" id="garage-title-text">GARAGE</div>
+      <div id="garage-header-right" style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;"></div>
+    </div>
+
+    <div class="garage-bottom">
+      <div id="garage-tabs" class="custom-tabs"></div>
+      <div id="garage-panes" class="tab-area"></div>
+      <div class="garage-btn-row" id="garage-btn-row"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── FRIENDS POPUP ── -->
+<div id="friends-popup" class="popup-overlay hidden">
+  <div class="popup-box">
+    <div class="popup-title">RACE WITH FRIENDS</div>
+
+    <!-- Main menu -->
+    <div id="fp-main">
+      <button class="btn-big" onclick="fp_create()">CREATE CODE</button>
+      <button class="btn-big" onclick="fp_enterCode()">ENTER CODE</button>
+      <button class="btn-icon popup-close" onclick="closeFriendsPopup()">✕ CLOSE</button>
+    </div>
+
+    <!-- Numpad panel (shared for create + enter) -->
+    <div id="fp-numpad-panel" class="hidden">
+      <div class="fp-label" id="fp-numpad-label">TYPE 5-DIGIT CODE</div>
+      <div class="fp-numpad-display"><span id="fp-numpad-digits">_ _ _ _ _</span></div>
+      <div class="fp-numpad-grid">
+        <button class="fp-key" onclick="fp_numpadKey('1')">1</button>
+        <button class="fp-key" onclick="fp_numpadKey('2')">2</button>
+        <button class="fp-key" onclick="fp_numpadKey('3')">3</button>
+        <button class="fp-key" onclick="fp_numpadKey('4')">4</button>
+        <button class="fp-key" onclick="fp_numpadKey('5')">5</button>
+        <button class="fp-key" onclick="fp_numpadKey('6')">6</button>
+        <button class="fp-key" onclick="fp_numpadKey('7')">7</button>
+        <button class="fp-key" onclick="fp_numpadKey('8')">8</button>
+        <button class="fp-key" onclick="fp_numpadKey('9')">9</button>
+        <button class="fp-key fp-key-back" onclick="fp_numpadBack()">⌫</button>
+        <button class="fp-key" onclick="fp_numpadKey('0')">0</button>
+        <button class="fp-key fp-key-ok" onclick="fp_numpadDone()">OK</button>
+      </div>
+      <button class="btn-icon" style="margin-top:6px" onclick="fp_numpadCancel()">✕ CANCEL</button>
+    </div>
+
+    <!-- Create waiting room — step 3: waiting for players -->
+    <div id="fp-create-panel" class="hidden">
+      <div class="fp-label">WAITING FOR PLAYERS</div>
+      <div class="fp-code-display">CODE: <span id="fp-code">—</span></div>
+      <div class="fp-label" id="fp-mode-chosen" style="color:#00ffcc;margin-bottom:4px"></div>
+      <div class="fp-players-display" id="fp-players-list"></div>
+      <div class="fp-btns" style="margin-top:10px">
+        <button class="btn-big" id="fp-start-btn" onclick="fp_startPrivate()">START ▶</button>
+        <button class="btn-icon" onclick="fp_cancelCreate()">✕ CANCEL</button>
+      </div>
+    </div>
+
+    <!-- Mode select panel (step 1 of CREATE flow) -->
+    <div id="fp-mode-panel" class="hidden">
+      <div class="fp-label">SELECT MODE</div>
+      <div class="fp-modes" id="fp-mode-btns"></div>
+      <div class="fp-btns" style="margin-top:14px">
+        <button class="btn-big" onclick="fp_modeNext()">NEXT ▶</button>
+        <button class="btn-icon" onclick="fp_modeCancel()">✕ CANCEL</button>
+      </div>
+    </div>
+
+    <!-- Connecting panel (step 2 of ENTER flow) -->
+    <div id="fp-connecting-panel" class="hidden">
+      <div class="fp-label">SEARCHING FOR LOBBY</div>
+      <div id="fp-connecting-code" style="font-size:2.2em;letter-spacing:.3em;color:#ff00ff;margin:16px 0;font-weight:700"></div>
+      <div class="fp-label" style="opacity:.55;margin-bottom:16px">WAITING TO JOIN…</div>
+      <button class="btn-icon" onclick="fp_cancelConnect()">✕ CANCEL</button>
+    </div>
+
+    <!-- Enter panel kept for compatibility (hidden) -->
+    <div id="fp-enter-panel" class="hidden"></div>
+  </div>
+</div>
+
+<!-- ── TRACK SELECT POPUP ── -->
+<div id="track-select-overlay" class="popup-overlay hidden">
+  <div class="popup-box" style="max-width:460px;max-height:80vh;overflow-y:auto;">
+    <div class="popup-title">SELECT TRACK</div>
+    <div id="track-select-list" style="display:flex;flex-direction:column;gap:6px;width:100%;margin-bottom:14px;"></div>
+    <div style="display:flex;gap:10px;justify-content:center;">
+      <button class="btn-big" id="track-select-confirm" onclick="confirmTrackSelect()">RACE ▶</button>
+      <button class="btn-icon" onclick="closeTrackSelect()">✕ CANCEL</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── CUTSCENE OVERLAY ── -->
+<div id="cutscene-fade"></div>
+
+<!-- ── LOBBY ── -->
+<div id="scr-lobby" class="screen">
+  <div class="lobby-wrap">
+    <div class="lobby-title" id="lobby-title">FINDING MATCH</div>
+    <div class="lobby-timer-ring">
+      <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" class="ring-bg"/><circle cx="60" cy="60" r="52" id="ring-fill" class="ring-fill"/></svg>
+      <div class="ring-label" id="lobby-secs">2:00</div>
+    </div>
+    <div class="lobby-count" id="lobby-count">1 / 30 players</div>
+    <div class="lobby-list" id="lobby-list"></div>
+    <div class="lobby-hint">Empty slots filled by AI when timer ends</div>
+    <button class="btn-icon" onclick="goToHome()">◀ CANCEL</button>
+  </div>
+</div>
+
+<!-- ── RACE ── -->
+<canvas id="race-canvas"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="hud-tl">
+    <div class="hud-hp-wrap">
+      <div class="hud-label">HP</div>
+      <div class="hud-hp-bar"><div id="hp-fill"></div></div>
+      <div class="hud-hp-num" id="hp-num">100</div>
+    </div>
+    <div class="hud-speed" id="hud-speed">0 <span>km/h</span></div>
+    <div class="hud-position" id="hud-position">P 1 / 10</div>
+  </div>
+  <div class="hud-tr">
+    <div class="hud-alive" id="hud-alive">10 ALIVE</div>
+    <button class="btn-icon hud-return-btn" onclick="returnToGarage()">◀ GARAGE</button>
+  </div>
+  <div class="hud-effect" id="hud-effect"></div>
+  <!-- ADDED: mobile boost button -->
+  <button id="mobile-boost-btn" class="mobile-boost" ontouchstart="triggerBoostAbility()" onclick="triggerBoostAbility()">⚡</button>
+  <div class="controls-hint">W/S or ↑↓ DRIVE  ·  A/D or ←→ STEER  ·  SPACE BOOST</div><!-- MODIFIED -->
+  <div id="spectate-banner" class="hidden">SPECTATING — YOU WERE ELIMINATED  ·  [ ] CYCLE CAMERA</div>
+</div>
+
+<!-- ── VOTE ── -->
+<div id="vote-panel" class="hidden">
+  <div class="vote-header">
+    <div class="vote-title" id="vote-title">VOTE FOR TRACK CHANGE</div>
+    <div class="vote-timer" id="vote-timer">12</div>
+  </div>
+  <div class="vote-grid" id="vote-grid"></div>
+  <div class="vote-counts" id="vote-counts"></div>
+</div>
+
+<!-- ── GAMEOVER ── -->
+<div id="scr-gameover" class="screen">
+  <div class="go-title" id="go-title">RACE OVER</div>
+  <div class="go-sub"   id="go-sub"></div>
+  <button class="btn-big" onclick="goToHome()">PLAY AGAIN</button>
+  <button class="btn-icon" onclick="goToGarage()">◀ RETURN TO GARAGE</button><!-- ADDED -->
+</div>
+
+<!-- ── EFFECTS ── -->
+<div id="dmg-flash"></div>
+<div id="boost-glow"></div>
+
+<!-- ── MATERIALIZE OVERLAY ── -->
+<canvas id="matrix-canvas" class="hidden"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

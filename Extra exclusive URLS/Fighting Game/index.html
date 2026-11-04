@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>1v1 Fighting</title>
+    <link rel="icon" type="image/png" href="Favicon.png">
+    <link rel="stylesheet" href="client/styles.css">
+</head>
+<body>
+    <div id="gameContainer">
+        <!-- Clouds -->
+        <div class="cloud cloud1"></div>
+        <div class="cloud cloud2"></div>
+        <div class="cloud cloud3"></div>
+
+        <!-- Birds (will be animated with JS) -->
+        <div class="bird" id="bird1"><span class="tail"></span><span class="wingLeft"></span><span class="wingRight"></span></div>
+        <div class="bird" id="bird2"><span class="tail"></span><span class="wingLeft"></span><span class="wingRight"></span></div>
+        <div class="bird" id="bird3"><span class="tail"></span><span class="wingLeft"></span><span class="wingRight"></span></div>
+
+        <div class="healthBar" id="redHealthBar">
+            <div class="healthFill" id="redHealthFill"></div>
+            <div class="healthText" id="redHealthText">RED: 100</div>
+        </div>
+
+        <div class="healthBar" id="blueHealthBar">
+            <div class="healthFill" id="blueHealthFill"></div>
+            <div class="healthText" id="blueHealthText">BLUE: 100</div>
+        </div>
+
+        <div class="staminaBar" id="redStamina">
+            <div class="staminaFill"></div>
+        </div>
+
+        <div class="staminaBar" id="blueStamina">
+            <div class="staminaFill"></div>
+        </div>
+
+        <div class="fighter" id="redFighter">
+            <canvas class="stickFigure" id="redCanvas" width="240" height="360"></canvas>
+        </div>
+        <div class="fighter" id="blueFighter">
+            <canvas class="stickFigure" id="blueCanvas" width="240" height="360"></canvas>
+        </div>
+
+        <div class="ground"></div>
+
+        <div class="controls" id="redControls">
+            RED: A/D=Move | W=Jump | S=Punch | L-Shift=Kick
+        </div>
+        <div class="controls" id="blueControls">
+            BLUE: ←/→=Move | ↑=Jump | ↓=Punch | R-Shift=Kick
+        </div>
+
+        <div id="gameOver">
+            <h1 id="winnerText"></h1>
+            <div id="coinsEarned" style="display: none; color: gold; font-size: 24px; margin-top: -20px; margin-bottom: 20px;"></div>
+            <button onclick="playAgain()">Play Again</button>
+        </div>
+
+        <!-- ESC Menu -->
+        <div id="escMenu">
+            <div class="menuContent">
+                <h2>MENU</h2>
+                <button class="menuButton" id="localPlayBtn">LOCAL PLAY</button>
+                <button class="menuButton" id="botBattleBtn">BOT BATTLE</button>
+                <button class="menuButton" id="multiplayerBtn">MULTIPLAYER</button>
+                <button class="menuButton" id="menuShopBtn">SHOP</button>
+                <button class="menuButton secondary" id="resumeBtn">RESUME</button>
+            </div>
+        </div>
+
+        <!-- Duel Notification -->
+        <div id="duelNotification" class="duelNotification">
+            <h3><span id="duelFromUser"></span> challenges you to a duel!</h3>
+            <button class="accept" onclick="acceptCurrentDuel()">Accept</button>
+            <button class="decline" onclick="declineCurrentDuel()">Decline</button>
+        </div>
+    </div>
+
+    <!-- Auth Modal -->
+    <div id="authModal" class="modal">
+        <div class="modalContent">
+            <h2>AUTHENTICATION</h2>
+            <input type="text" id="authUsername" placeholder="Username (3-20 characters)" maxlength="20">
+            <input type="password" id="authPassword" placeholder="Password (min 6 characters)">
+            <div id="authMessage"></div>
+            <div class="modalButtonGroup">
+                <button class="modalButton primary" id="loginBtn">LOGIN</button>
+                <button class="modalButton primary" id="registerBtn">REGISTER</button>
+                <button class="modalButton secondary" id="cancelAuthBtn">CANCEL</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lobby Modal -->
+    <div id="lobbyModal" class="modal">
+        <div class="modalContent">
+            <h2>LOBBY</h2>
+            <div class="userInfo" id="lobbyUserInfo">
+                Logged in as: <span id="lobbyUsername"></span> |
+                Coins: <span id="lobbyCoins" style="color: gold;">0</span> |
+                Rank: <span id="lobbyRank" style="color: #ffaa00;">Unranked</span> |
+                ELO: <span id="lobbyElo">1000</span>
+            </div>
+            <input type="text" id="searchInput" placeholder="Search users...">
+            <div id="userList" class="userList"></div>
+            <div id="lobbyMessage"></div>
+            <div class="modalButtonGroup">
+                <button class="modalButton primary" id="leaderboardBtn">LEADERBOARD</button>
+                <button class="modalButton primary" id="shopBtn">SHOP</button>
+                <button class="modalButton secondary" id="closeLobbyBtn">BACK TO MENU</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaderboard Modal -->
+    <div id="leaderboardModal" class="modal">
+        <div class="modalContent">
+            <h2>LEADERBOARD</h2>
+            <table id="leaderboardTable" style="width: 100%; color: #fff; margin: 20px 0; border-collapse: collapse;">
+                <thead>
+                    <tr style="background: #333; text-align: left;">
+                        <th style="padding: 10px; border: 1px solid #555;">#</th>
+                        <th style="padding: 10px; border: 1px solid #555;">Player</th>
+                        <th style="padding: 10px; border: 1px solid #555;">ELO</th>
+                        <th style="padding: 10px; border: 1px solid #555;">Rank</th>
+                        <th style="padding: 10px; border: 1px solid #555;">W/L</th>
+                        <th style="padding: 10px; border: 1px solid #555;">Peak ELO</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody"></tbody>
+            </table>
+            <div class="modalButtonGroup">
+                <button class="modalButton secondary" id="closeLeaderboardBtn">BACK TO LOBBY</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Shop Modal -->
+    <div id="shopModal" class="modal">
+        <div class="modalContent">
+            <h2>SKIN SHOP</h2>
+            <div class="userInfo">Coins: <span id="shopCoins" style="color: gold;">0</span></div>
+            <div id="shopMessage"></div>
+            <div class="characterGrid" id="shopGrid"></div>
+            <div class="modalButtonGroup">
+                <button class="modalButton secondary" id="closeShopBtn">BACK TO LOBBY</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Character Selection Modal -->
+    <div id="characterSelectModal" class="modal">
+        <div class="modalContent">
+            <h2>SELECT YOUR FIGHTER</h2>
+            <div id="characterSelectionMessage" class="characterMessage"></div>
+            <div class="characterGrid" id="characterGrid">
+                <!-- F-TIER (Worst) -->
+                <div class="characterCard" data-class="balanced">
+                    <div class="characterPreview balanced"></div>
+                    <h3>NORMAL</h3>
+                    <p class="characterDesc">Well-rounded fighter</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>100</span></div>
+                        <div class="stat">Speed: <span>★★★☆☆</span></div>
+                        <div class="stat">Damage: <span>★★★☆☆</span></div>
+                    </div>
+                </div>
+                <!-- D-TIER -->
+                <div class="characterCard" data-class="crimsonDemon">
+                    <div class="characterPreview crimsonDemon" style="background: linear-gradient(135deg, Dark Red 0%, #b22222 100%);"></div>
+                    <h3>CRIMSON DEMON</h3>
+                    <p class="characterDesc">Extreme damage, very low health</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>70</span></div>
+                        <div class="stat">Speed: <span>★★★☆☆</span></div>
+                        <div class="stat">Damage: <span>★★★★★</span></div>
+                    </div>
+                </div>
+                <div class="characterCard" data-class="speedster">
+                    <div class="characterPreview speedster"></div>
+                    <h3>SPEEDSTER</h3>
+                    <p class="characterDesc">Fast, low damage, fragile</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>80</span></div>
+                        <div class="stat">Speed: <span>★★★★★</span></div>
+                        <div class="stat">Damage: <span>★★☆☆☆</span></div>
+                    </div>
+                </div>
+                <!-- C-TIER -->
+                <div class="characterCard" data-class="agileNinja">
+                    <div class="characterPreview agileNinja" style="background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%);"></div>
+                    <h3>AGILE NINJA</h3>
+                    <p class="characterDesc">Fast and stealthy, balanced damage</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>90</span></div>
+                        <div class="stat">Speed: <span>★★★★☆</span></div>
+                        <div class="stat">Damage: <span>★★★☆☆</span></div>
+                    </div>
+                </div>
+                <div class="characterCard" data-class="thunderMonk">
+                    <div class="characterPreview thunderMonk" style="background: linear-gradient(135deg, #ffff00 0%, #fff44f 100%);"></div>
+                    <h3>THUNDER MONK</h3>
+                    <p class="characterDesc">Electric energy, lightning-fast attacks</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>88</span></div>
+                        <div class="stat">Speed: <span>★★★★★</span></div>
+                        <div class="stat">Damage: <span>★★☆☆☆</span></div>
+                    </div>
+                </div>
+                <div class="characterCard" data-class="shadowAssassin">
+                    <div class="characterPreview shadowAssassin" style="background: linear-gradient(135deg, #4b0082 0%, #6a0dad 100%);"></div>
+                    <h3>SHADOW ASSASSIN</h3>
+                    <p class="characterDesc">Mysterious glass cannon with high critical damage</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>75</span></div>
+                        <div class="stat">Speed: <span>★★★★☆</span></div>
+                        <div class="stat">Damage: <span>★★★★★</span></div>
+                    </div>
+                </div>
+                <!-- B-TIER -->
+                <div class="characterCard" data-class="flameStriker">
+                    <div class="characterPreview flameStriker" style="background: linear-gradient(135deg, Orange 0%, #ff9933 100%);"></div>
+                    <h3>FLAME STRIKER</h3>
+                    <p class="characterDesc">Fire-based fighter, aggressive but fragile</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>85</span></div>
+                        <div class="stat">Speed: <span>★★★★☆</span></div>
+                        <div class="stat">Damage: <span>★★★★☆</span></div>
+                    </div>
+                </div>
+                <div class="characterCard" data-class="sakuraWarrior">
+                    <div class="characterPreview sakuraWarrior" style="background: linear-gradient(135deg, #ff69b4 0%, #ffb6c1 100%);"></div>
+                    <h3>SAKURA WARRIOR</h3>
+                    <p class="characterDesc">Elegant, technique-focused fighter</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>95</span></div>
+                        <div class="stat">Speed: <span>★★★☆☆</span></div>
+                        <div class="stat">Damage: <span>★★★☆☆</span></div>
+                    </div>
+                </div>
+                <div class="characterCard" data-class="arcticFox">
+                    <div class="characterPreview arcticFox" style="background: linear-gradient(135deg, White 0%, #e6f2ff 100%);"></div>
+                    <h3>ARCTIC FOX</h3>
+                    <p class="characterDesc">Pure, agile fighter with high evasion</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>92</span></div>
+                        <div class="stat">Speed: <span>★★★★☆</span></div>
+                        <div class="stat">Damage: <span>★★☆☆☆</span></div>
+                    </div>
+                </div>
+                <!-- A-TIER -->
+                <div class="characterCard" data-class="iceKnight">
+                    <div class="characterPreview iceKnight" style="background: linear-gradient(135deg, Teal 0%, #7fffd4 100%);"></div>
+                    <h3>ICE KNIGHT</h3>
+                    <p class="characterDesc">Cold, calculated fighter</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>120</span></div>
+                        <div class="stat">Speed: <span>★★☆☆☆</span></div>
+                        <div class="stat">Damage: <span>★★★☆☆</span></div>
+                    </div>
+                </div>
+                <div class="characterCard" data-class="mysticWarrior">
+                    <div class="characterPreview mysticWarrior" style="background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);"></div>
+                    <h3>MYSTIC WARRIOR</h3>
+                    <p class="characterDesc">Energetic warrior with mystical power</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>110</span></div>
+                        <div class="stat">Speed: <span>★★★☆☆</span></div>
+                        <div class="stat">Damage: <span>★★★★☆</span></div>
+                    </div>
+                </div>
+                <!-- S-TIER (Best) -->
+                <div class="characterCard" data-class="brawler">
+                    <div class="characterPreview brawler"></div>
+                    <h3>BRAWLER</h3>
+                    <p class="characterDesc">High damage, slow, tanky</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>130</span></div>
+                        <div class="stat">Speed: <span>★★☆☆☆</span></div>
+                        <div class="stat">Damage: <span>★★★★☆</span></div>
+                    </div>
+                </div>
+                <div class="characterCard" data-class="heavyTanker">
+                    <div class="characterPreview heavyTanker" style="background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);"></div>
+                    <h3>HEAVY TANKER</h3>
+                    <p class="characterDesc">Ultra tanky, very slow, devastating damage</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>150</span></div>
+                        <div class="stat">Speed: <span>★☆☆☆☆</span></div>
+                        <div class="stat">Damage: <span>★★★★★</span></div>
+                    </div>
+                </div>
+                <div class="characterCard" data-class="stoneGuardian">
+                    <div class="characterPreview stoneGuardian" style="background: linear-gradient(135deg, #696969 0%, #a9a9a9 100%);"></div>
+                    <h3>STONE GUARDIAN</h3>
+                    <p class="characterDesc">Earth-based defender with highest health</p>
+                    <div class="characterStats">
+                        <div class="stat">Health: <span>160</span></div>
+                        <div class="stat">Speed: <span>★☆☆☆☆</span></div>
+                        <div class="stat">Damage: <span>★★★★☆</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Load shared constants -->
+    <script src="shared/constants.js"></script>
+
+    <!-- Load Socket.io client -->
+    <script src="/socket.io/socket.io.js"></script>
+
+    <!-- Load game logic -->
+    <script src="client/game.js"></script>
+
+    <!-- Load multiplayer logic -->
+    <script src="client/multiplayer.js"></script>
+
+    <!-- Menu and UI logic -->
+    <script>
+        // Birds animation
+        function createBirds() {
+            const birds = [
+                { id: 'bird1', top: 70, duration: 25, delay: 0 },
+                { id: 'bird2', top: 140, duration: 30, delay: 10 },
+                { id: 'bird3', top: 100, duration: 28, delay: 20 }
+            ];
+
+            birds.forEach(bird => {
+                const birdEl = document.getElementById(bird.id);
+                birdEl.style.top = bird.top + 'px';
+                birdEl.style.animation = `flyBird ${bird.duration}s linear infinite`;
+                birdEl.style.animationDelay = `-${bird.delay}s`;
+            });
+        }
+
+        createBirds();
+
+        // ESC key handling
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                toggleEscMenu();
+            }
+        });
+
+        function toggleEscMenu() {
+            const escMenu = document.getElementById('escMenu');
+            const authModal = document.getElementById('authModal');
+            const lobbyModal = document.getElementById('lobbyModal');
+
+            // Don't open menu if modals are open
+            if (authModal.classList.contains('active') || lobbyModal.classList.contains('active')) {
+                return;
+            }
+
+            if (escMenu.classList.contains('active')) {
+                escMenu.classList.remove('active');
+                if (gameMode.type === 'local' || gameMode.type === 'bot') {
+                    setPaused(false);
+                }
+            } else {
+                escMenu.classList.add('active');
+                if (gameMode.type === 'local' || gameMode.type === 'bot') {
+                    setPaused(true);
+                }
+            }
+        }
+
+        // Character selection event listeners
+        document.querySelectorAll('.characterCard').forEach(card => {
+            card.addEventListener('click', () => {
+                // Visual selection feedback
+                card.classList.add('selected');
+
+                // Get selected class
+                const selectedClass = card.getAttribute('data-class');
+                selectCharacter(selectedClass);
+            });
+        });
+
+        // Menu buttons
+        document.getElementById('localPlayBtn').addEventListener('click', () => {
+            document.getElementById('escMenu').classList.remove('active');
+            showCharacterSelect('local');
+        });
+
+        document.getElementById('botBattleBtn').addEventListener('click', () => {
+            // Check if logged in (required for bot mode to track coins)
+            const storedToken = localStorage.getItem('sessionToken');
+
+            if (storedToken && currentUsername) {
+                // Already logged in, show character select
+                document.getElementById('escMenu').classList.remove('active');
+                showCharacterSelect('bot');
+            } else {
+                // Show auth modal
+                document.getElementById('escMenu').classList.remove('active');
+                document.getElementById('authModal').classList.add('active');
+            }
+        });
+
+        document.getElementById('multiplayerBtn').addEventListener('click', () => {
+            // Check if logged in
+            const storedToken = localStorage.getItem('sessionToken');
+
+            if (storedToken && currentUsername) {
+                // Already logged in, show lobby
+                document.getElementById('escMenu').classList.remove('active');
+                showLobby();
+            } else {
+                // Show auth modal
+                document.getElementById('escMenu').classList.remove('active');
+                document.getElementById('authModal').classList.add('active');
+            }
+        });
+
+        document.getElementById('menuShopBtn').addEventListener('click', () => {
+            // Check if logged in
+            const storedToken = localStorage.getItem('sessionToken');
+
+            if (storedToken && currentUsername) {
+                // Already logged in, open shop
+                document.getElementById('escMenu').classList.remove('active');
+                openShop();
+            } else {
+                // Show auth modal
+                document.getElementById('escMenu').classList.remove('active');
+                document.getElementById('authModal').classList.add('active');
+            }
+        });
+
+        document.getElementById('resumeBtn').addEventListener('click', () => {
+            document.getElementById('escMenu').classList.remove('active');
+            if (gameMode.type === 'local' || gameMode.type === 'bot') {
+                setPaused(false);
+            }
+        });
+
+        // Auth modal buttons
+        document.getElementById('loginBtn').addEventListener('click', async () => {
+            const username = document.getElementById('authUsername').value.trim();
+            const password = document.getElementById('authPassword').value;
+            const messageDiv = document.getElementById('authMessage');
+
+            if (!username || !password) {
+                messageDiv.className = 'errorMessage';
+                messageDiv.textContent = 'Please enter username and password';
+                return;
+            }
+
+            const result = await login(username, password);
+
+            if (result.success) {
+                messageDiv.className = 'successMessage';
+                messageDiv.textContent = 'Login successful!';
+
+                setTimeout(() => {
+                    document.getElementById('authModal').classList.remove('active');
+                    document.getElementById('authUsername').value = '';
+                    document.getElementById('authPassword').value = '';
+                    messageDiv.textContent = '';
+
+                    // Show lobby
+                    showLobby();
+                }, 1000);
+            } else {
+                messageDiv.className = 'errorMessage';
+                messageDiv.textContent = result.error;
+            }
+        });
+
+        document.getElementById('registerBtn').addEventListener('click', async () => {
+            const username = document.getElementById('authUsername').value.trim();
+            const password = document.getElementById('authPassword').value;
+            const messageDiv = document.getElementById('authMessage');
+
+            if (!username || !password) {
+                messageDiv.className = 'errorMessage';
+                messageDiv.textContent = 'Please enter username and password';
+                return;
+            }
+
+            const result = await register(username, password);
+
+            if (result.success) {
+                messageDiv.className = 'successMessage';
+                messageDiv.textContent = 'Registration successful!';
+
+                setTimeout(() => {
+                    document.getElementById('authModal').classList.remove('active');
+                    document.getElementById('authUsername').value = '';
+                    document.getElementById('authPassword').value = '';
+                    messageDiv.textContent = '';
+
+                    // Show lobby
+                    showLobby();
+                }, 1000);
+            } else {
+                messageDiv.className = 'errorMessage';
+                messageDiv.textContent = result.error;
+            }
+        });
+
+        document.getElementById('cancelAuthBtn').addEventListener('click', () => {
+            document.getElementById('authModal').classList.remove('active');
+            document.getElementById('authUsername').value = '';
+            document.getElementById('authPassword').value = '';
+            document.getElementById('authMessage').textContent = '';
+        });
+
+        // Lobby modal
+        document.getElementById('searchInput').addEventListener('input', (e) => {
+            searchUsers(e.target.value);
+        });
+
+        document.getElementById('closeLobbyBtn').addEventListener('click', () => {
+            hideLobby();
+            document.getElementById('escMenu').classList.add('active');
+        });
+
+        document.getElementById('shopBtn').addEventListener('click', () => {
+            openShop();
+        });
+
+        document.getElementById('closeShopBtn').addEventListener('click', () => {
+            closeShop();
+        });
+
+        // Duel notification handlers
+        function acceptCurrentDuel() {
+            if (currentDuelId) {
+                acceptDuel(currentDuelId);
+            }
+        }
+
+        function declineCurrentDuel() {
+            if (currentDuelId) {
+                declineDuel(currentDuelId);
+            }
+        }
+
+        // Update lobby username when logged in
+        function updateLobbyUsername() {
+            const lobbyUsernameSpan = document.getElementById('lobbyUsername');
+            if (currentUsername && lobbyUsernameSpan) {
+                lobbyUsernameSpan.textContent = currentUsername;
+            }
+        }
+
+        // Check for existing session on load
+        window.addEventListener('load', () => {
+            const storedToken = localStorage.getItem('sessionToken');
+            if (storedToken) {
+                // Session will be validated via socket connection
+                setTimeout(updateLobbyUsername, 500);
+            }
+
+            // Immediately show character selection for local mode
+            showCharacterSelect('local');
+        });
+    </script>
+</body>
+</html>

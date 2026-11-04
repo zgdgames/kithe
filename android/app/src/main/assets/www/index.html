@@ -1,0 +1,118 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kithe</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="android.css" />
+</head>
+<body>
+  <div id="chrome">
+    <div id="tabstrip">
+      <div id="tabs"></div>
+      <button id="newTabBtn" title="New Tab (Ctrl+T)">+</button>
+    </div>
+
+    <div id="toolbar">
+      <button id="backBtn" class="nav-btn" title="Back">&#8592;</button>
+      <button id="forwardBtn" class="nav-btn" title="Forward">&#8594;</button>
+      <button id="reloadBtn" class="nav-btn" title="Reload">&#8635;</button>
+      <div id="addressWrap">
+        <span id="secureIcon">🔒</span>
+        <input id="addressBar" type="text" placeholder="Search or type a URL (try snake.game)" spellcheck="false" />
+        <button id="voiceBtn" class="icon-btn hidden" title="Search with voice"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button id="aiBtn" class="icon-btn" title="Search with AI Mode"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 3l1.9 5.6L18.5 10.5l-5.6 1.9L11 18l-1.9-5.6L3.5 10.5l5.6-1.9z"/><path d="M19 14.5l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/></svg></button>
+        <button id="bookmarkBtn" class="icon-btn" title="Bookmark this page (Ctrl+D)">☆</button>
+      </div>
+      <button id="bookmarksBtn" class="nav-btn" title="Bookmarks">📑</button>
+      <button id="immersiveBtn" class="nav-btn" title="Full-screen tab (Ctrl+Shift+F)">⛶</button>
+      <button id="settingsBtn" class="nav-btn" title="Settings (Ctrl+,)">⚙️</button>
+    </div>
+
+    <div id="bookmarksBar" class="hidden"></div>
+
+  <div id="bookmarksPanel" class="panel hidden">
+    <div class="panel-header"><span>Bookmarks</span><button class="panel-close" data-close="bookmarksPanel">✕</button></div>
+    <div id="bookmarksList" class="panel-list"></div>
+  </div>
+
+  <div id="settingsPanel" class="panel hidden">
+    <div class="panel-header"><span>Settings</span><button class="panel-close" data-close="settingsPanel">✕</button></div>
+    <div class="panel-body">
+      <div class="settings-section">
+        <label>Search mode</label>
+        <div id="searchModeToggle" class="segmented" data-value="direct">
+          <div class="segmented-thumb"></div>
+          <button type="button" class="segmented-opt" data-mode="direct">Classic</button>
+          <button type="button" class="segmented-opt" data-mode="api">Private</button>
+        </div>
+      </div>
+
+      <div id="apiFields">
+        <div class="settings-section">
+          <label>Kithe Search API key</label>
+          <input id="googleApiKeyInput" type="text" placeholder="AIza..." />
+        </div>
+        <div class="settings-section">
+          <label>Kithe Search engine ID (cx)</label>
+          <input id="googleCxInput" type="text" placeholder="a1b2c3d4e5f6g7h8i" />
+        </div>
+        <p class="settings-hint">
+          Get these free at <b>programmablesearchengine.google.com</b> (engine ID)
+          and <b>console.cloud.google.com/apis/credentials</b> (API key, enable
+          "Custom Search API"). Private mode uses your own key for results.
+          Classic mode reads the results for you with no key. Both show
+          them in Kithe's own page.
+        </p>
+      </div>
+
+      <div class="settings-section theme-row">
+        <label>Accent color</label>
+        <input type="color" id="accentPicker" value="#7c5cff" />
+      </div>
+      <div class="settings-section theme-row">
+        <label>Background</label>
+        <input type="color" id="bgPicker" value="#1e1f26" />
+      </div>
+      <div class="settings-section">
+        <label>Apps</label>
+        <div id="exclusiveList" class="exclusive-list"></div>
+      </div>
+
+      <div class="settings-section">
+        <label>Shortcuts</label>
+        <p class="settings-hint">
+          Ctrl+Shift+F — full-screen tab (hides tabs/toolbar, press again to exit)<br />
+          Ctrl+T new tab · Ctrl+W close tab · Ctrl+D bookmark · Ctrl+L address bar
+        </p>
+      </div>
+
+      <div class="settings-section">
+        <label>This page</label>
+        <button id="installAppBtn" type="button" class="text-btn">📌 Install current page as app</button>
+        <p class="settings-hint">Installs this page as its own app in your launcher, with its own icon — opens in a standalone window, no tabs or toolbar.</p>
+      </div>
+
+      <button id="saveSettingsBtn" class="text-btn primary">Save</button>
+      <button id="resetSettingsBtn" class="text-btn">Restore all to default</button>
+      <p id="versionLine" class="settings-hint"></p>
+    </div>
+  </div>
+  </div>
+
+  <div id="promptOverlay" class="prompt-overlay hidden">
+    <div class="prompt-box">
+      <div id="promptLabel" class="prompt-label">Name this bookmark:</div>
+      <input id="promptInput" type="text" spellcheck="false" />
+      <div class="prompt-actions">
+        <button id="promptCancel" type="button" class="text-btn">Cancel</button>
+        <button id="promptOk" type="button" class="text-btn primary">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="android-shim.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

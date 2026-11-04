@@ -1,0 +1,12 @@
+/* Phone-width adjustments only — the shared style.css is used unchanged. */
+#toolbar { gap: 2px; padding: 8px 4px; }
+.nav-btn { width: 30px; flex-shrink: 0; }
+#addressWrap { min-width: 0; }
+#addressBar { min-width: 0; width: 100%; }
+.panel { width: min(320px, calc(100vw - 24px)); }
+.prompt-box { width: min(320px, 90vw); }
+
+/* While a panel is open the chrome covers the whole screen but is see-through
+   except for the tab strip/toolbar and the panel itself. */
+html.kithe-overlay, html.kithe-overlay body { background: transparent; }
+html.kithe-overlay #chrome { background: var(--bg); }

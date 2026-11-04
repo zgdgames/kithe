@@ -1,0 +1,28 @@
+# XcodeGen spec. Run `xcodegen generate` to produce Kithe.xcodeproj.
+# See README.md - there's also a no-tools path if you'd rather not install it.
+name: Kithe
+options:
+  bundleIdPrefix: com.zgdgames
+  deploymentTarget:
+    iOS: "15.0"
+  createIntermediateGroups: true
+
+targets:
+  Kithe:
+    type: application
+    platform: iOS
+    sources:
+      - path: Kithe
+    info:
+      path: Kithe/Info.plist
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zgdgames.kithe
+        PRODUCT_NAME: Kithe
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"   # iPhone and iPad
+        INFOPLIST_FILE: Kithe/Info.plist
+        CODE_SIGN_STYLE: Automatic

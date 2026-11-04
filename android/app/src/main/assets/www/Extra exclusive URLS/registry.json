@@ -1,0 +1,43 @@
+{
+  "snake.game": {
+    "title": "Snake",
+    "entry": "snake/index.html",
+    "icon": "\ud83d\udc0d",
+    "iconImage": "snake/icon.png"
+  },
+  "home.local": {
+    "title": "My Apps",
+    "entry": "home/index.html",
+    "icon": "\ud83c\udfe0"
+  },
+  "cybertrack.com": {
+    "title": "Cyber Track",
+    "type": "server",
+    "dir": "Cyber Track",
+    "command": [
+      "node",
+      "server.js"
+    ],
+    "port": 8080,
+    "iconImage": "Cyber Track/public/cybertrackfavicon.png",
+    "mobileEntry": "Cyber Track/kithe/index.html"
+  },
+  "fightinggame.com": {
+    "title": "Fighting Game",
+    "type": "server",
+    "dir": "Fighting Game",
+    "command": [
+      "node",
+      "server/server.js"
+    ],
+    "port": 3000,
+    "iconImage": "Fighting Game/Favicon.png",
+    "mobileEntry": "Fighting Game/kithe/index.html"
+  },
+  "igx-assistant.com": {
+    "title": "IGX Assistant",
+    "type": "native",
+    "package": "com.igx.assistant",
+    "icon": "\ud83e\udd16"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "kithe-browser",
+  "productName": "Kithe",
+  "version": "0.1.0",
+  "description": "A customizable Electron browser with real web browsing and exclusive custom-URL apps/games.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^31.0.0"
+  }
+}

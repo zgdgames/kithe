@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Launcher for the Kithe browser .desktop entry.
+set -e
+APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$APP_DIR"
+# --disable-gpu-sandbox: since the Aug 2026 system update the GPU process
+# cannot start its own sandbox (gpu_process_host error_code=1002), and
+# Chromium then aborts the whole app with "GPU process isn't usable".
+# This keeps hardware acceleration; --disable-gpu would fall back to
+# software rendering instead.
+exec ./node_modules/.bin/electron . --no-sandbox --disable-gpu-sandbox "$@"

@@ -38,6 +38,6 @@
     "title": "IGX Assistant",
     "type": "native",
     "package": "com.igx.assistant",
-    "icon": "\ud83e\udd16"
+    "iconImage": "igx-assistant/icon.png"
   }
 }

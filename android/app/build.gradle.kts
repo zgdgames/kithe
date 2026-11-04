@@ -10,8 +10,8 @@ android {
         applicationId = "com.kithe.browser"
         minSdk = 29
         targetSdk = 34
-        versionCode = 109
-        versionName = "0.1.9"
+        versionCode = 110
+        versionName = "0.1.10"
     }
 
     buildTypes {
@@ -50,7 +50,7 @@ tasks.register<Sync>("syncWeb") {
         include("android-shim.js", "android.css")
     }
     from(File(webRoot, "Extra exclusive URLS")) {
-        include("registry.json", "home/**", "snake/**", "Cyber Track/public/cybertrackfavicon.png", "Fighting Game/Favicon.png", "Fighting Game/kithe/**", "Cyber Track/kithe/**", "Fighting Game/shared/constants.js")
+        include("registry.json", "home/**", "snake/**", "igx-assistant/**", "Cyber Track/public/cybertrackfavicon.png", "Fighting Game/Favicon.png", "Fighting Game/kithe/**", "Cyber Track/kithe/**", "Fighting Game/shared/constants.js")
         into("Extra exclusive URLS")
     }
 }

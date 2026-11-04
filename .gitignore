@@ -4,3 +4,4 @@ build/
 local.properties
 *.apk
 *.log
+android/app/src/main/assets/www/

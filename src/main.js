@@ -363,7 +363,15 @@ function privateGoogleSearch(query, kind = 'web') {
   });
 }
 
-function performSearch(tabId, query, kind = 'web') {
+let aiModeOn = false;
+function setAiMode(on) {
+  aiModeOn = !!on;
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('ai:mode', { on: aiModeOn });
+  const tab = tabs.get(activeTabId);
+  if (tab) tab.view.webContents.executeJavaScript(`window.__setAiOn && window.__setAiOn(${aiModeOn})`).catch(() => {});
+}
+
+function performSearch(tabId, query, kind = 'web', ctx = '') {
   if (kind === true) kind = 'ai';
   const ai = kind === 'ai';
   const tab = tabs.get(tabId);
@@ -374,10 +382,10 @@ function performSearch(tabId, query, kind = 'web') {
   const settings = store.getSettings();
   const configured = !!(settings.googleApiKey && settings.googleCx) && settings.searchMode === 'api';
 
-  tab.view.webContents.loadFile(path.join(INTERNAL_DIR, 'search.html'), ai ? { query: { ai: '1' } } : kind !== 'web' ? { query: { kind } } : undefined).then(async () => {
+  tab.view.webContents.loadFile(path.join(INTERNAL_DIR, 'search.html'), ai ? { query: { ai: '1', q: query, ...(ctx ? { follow: '1' } : {}) } } : kind !== 'web' ? { query: { kind } } : undefined).then(async () => {
     let state = { configured: true, query };
     const outcome = ai
-      ? (query ? await privateGoogleSearch(query, 'ai') : {})
+      ? (query ? await privateGoogleSearch(ctx ? `${ctx}\n\nUser: ${query}` : query, 'ai') : {})
       : configured && kind === 'web'
         ? await googleCustomSearch(query, settings.googleApiKey, settings.googleCx)
         : await privateGoogleSearch(query, kind);
@@ -386,7 +394,7 @@ function performSearch(tabId, query, kind = 'web') {
   });
 }
 
-function navigateTab(tabId, rawInput) {
+function navigateTab(tabId, rawInput, forceWeb = false) {
   const tab = tabs.get(tabId);
   if (!tab) return;
   const settings = store.getSettings();
@@ -394,7 +402,7 @@ function navigateTab(tabId, rawInput) {
   if (resolved.type === 'custom') {
     activateRegistryEntry(tabId, resolved.hostname, resolved.entry);
   } else if (resolved.type === 'search') {
-    performSearch(tabId, rawInput.trim());
+    performSearch(tabId, rawInput.trim(), aiModeOn && !forceWeb ? 'ai' : 'web');
   } else {
     tab.customHostname = null;
     tab.displayOverride = null;
@@ -424,7 +432,9 @@ function createTab(initialUrl) {
   const interceptCustomNav = (event, url) => {
     if (url.startsWith('kithe-ai:')) {
       event.preventDefault();
-      performSearch(tab.id, decodeURIComponent(url.slice('kithe-ai:'.length)), true);
+      const rest = url.slice('kithe-ai:'.length);
+      const c = rest.indexOf('&ctx=');
+      performSearch(tab.id, decodeURIComponent(c < 0 ? rest : rest.slice(0, c)).trim(), 'ai', c < 0 ? '' : decodeURIComponent(rest.slice(c + 5)));
       return;
     }
     const vertical = ['images', 'news', 'videos'].find((k) => url.startsWith('kithe-' + k + ':'));
@@ -433,13 +443,18 @@ function createTab(initialUrl) {
       performSearch(tab.id, decodeURIComponent(url.slice(('kithe-' + vertical + ':').length)), vertical);
       return;
     }
-    if (url.startsWith('kithe-voice:')) {
+    if (url.startsWith('kithe-aimode:')) {
+      event.preventDefault();
+      setAiMode(!aiModeOn);
+      return;
+    }
+    if (url.startsWith('kithe-voice:') || url.startsWith('kithe-installigx:')) {
       event.preventDefault();
       return;
     }
     if (url.startsWith('kithe-search:')) {
       event.preventDefault();
-      navigateTab(id, decodeURIComponent(url.slice('kithe-search:'.length)));
+      navigateTab(id, decodeURIComponent(url.slice('kithe-search:'.length)), true);
       return;
     }
     // Home page bookmark-folder management: since the home page is a
@@ -901,6 +916,8 @@ ipcMain.handle('bookmarks:remove', (e, { id }) => store.removeBookmark(id));
 ipcMain.handle('bookmarks:rename', (e, { id, title }) => store.updateBookmark(id, { title }));
 ipcMain.handle('bookmarks:setFolder', (e, { id, folder }) => store.updateBookmark(id, { folder: folder || null }));
 
+ipcMain.handle('ai:get', () => aiModeOn);
+ipcMain.handle('ai:set', (e, { on }) => { aiModeOn = !!on; const tab = tabs.get(activeTabId); if (tab) tab.view.webContents.executeJavaScript(`window.__setAiOn && window.__setAiOn(${aiModeOn})`).catch(() => {}); });
 ipcMain.handle('search:ai', (e, { q }) => { if (activeTabId !== null) performSearch(activeTabId, (q || '').trim(), true); });
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('settings:get', () => store.getSettings());

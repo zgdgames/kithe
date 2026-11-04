@@ -301,6 +301,7 @@ body.chrome-hidden #chrome { display: none; }
 .icon-btn.hidden { display: none; }
 .icon-btn:hover { background: var(--border); color: var(--text); }
 .icon-btn.active { color: #ffc94d; }
+.icon-btn.on { background: var(--grad); color: white; }
 .icon-btn.pop { animation: pop 0.32s cubic-bezier(.3,1.8,.4,1); }
 @keyframes pop {
   0% { transform: scale(1); }

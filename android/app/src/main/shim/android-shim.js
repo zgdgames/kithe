@@ -93,6 +93,9 @@
     voiceSearch: () => invoke('search:voice'),
     appVersion: () => invoke('app:version'),
   aiSearch: (q) => invoke('search:ai', { q }),
+  getAiMode: () => invoke('ai:get'),
+  setAiMode: (on) => invoke('ai:set', { on }),
+  onAiMode: (cb) => on('ai:mode', cb),
 
     installAsApp: (payload) => invoke('app:install', payload),
 

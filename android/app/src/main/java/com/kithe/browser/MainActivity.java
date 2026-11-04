@@ -106,6 +106,8 @@ public class MainActivity extends Activity {
     }
 
     static volatile boolean visible = false;
+    boolean aiModeOn;
+    boolean forceWeb;
     private final Handler updateHandler = new Handler(Looper.getMainLooper());
     private final Runnable updateTick = new Runnable() {
         @Override
@@ -196,6 +198,8 @@ public class MainActivity extends Activity {
         density = getResources().getDisplayMetrics().density;
         WebView.setWebContentsDebuggingEnabled(false);
         store = new Store(getFilesDir());
+        aiModeOn = getSharedPreferences("ui", MODE_PRIVATE).getBoolean("aiOn", false);
+        if (!privateBinding) privateBinding = bindService(new Intent(this, PrivateSearchService.class), privateConn, Context.BIND_AUTO_CREATE);
         try {
             registry = new JSONObject(readAsset(WWW_ASSET + EXCLUSIVE + "registry.json"));
             // Apps that need a desktop server ship a self-contained mobile
@@ -371,7 +375,7 @@ public class MainActivity extends Activity {
         if (action == null) return;
         in.removeExtra(EXTRA_WIDGET);
         if (action.equals("voice")) startVoiceSearch();
-        else if (action.equals("ai")) openAiMode("");
+        else if (action.equals("ai")) { setAiMode(true); focusAddressBar(); }
         else if (action.equals("search")) focusAddressBar();
     }
 
@@ -420,14 +424,28 @@ public class MainActivity extends Activity {
 
     // AI Mode is the IGX Assistant's answer, shown inside Kithe. It comes from
     // the private, signed-out search, never from Kithe, so the two can't loop.
-    void openAiMode(String query) {
+    void setAiMode(boolean on) {
+        aiModeOn = on;
+        getSharedPreferences("ui", MODE_PRIVATE).edit().putBoolean("aiOn", on).apply();
+        try {
+            emit("ai:mode", new JSONObject().put("on", on));
+        } catch (JSONException ignored) {
+        }
         Tab tab = tabs.get(activeTabId);
-        if (tab == null) return;
-        performAiSearch(tab, query == null ? "" : query.trim());
+        if (tab != null) tab.view.evaluateJavascript("window.__setAiOn && window.__setAiOn(" + on + ")", null);
     }
 
-    void performAiSearch(final Tab tab, final String query) {
-        final String url = WWW + "internal/search.html?ai=1&q=" + Uri.encode(query);
+    void openAiMode(String raw) {
+        Tab tab = tabs.get(activeTabId);
+        if (tab == null) return;
+        int c = raw.indexOf("&ctx=");
+        String query = Uri.decode(c < 0 ? raw : raw.substring(0, c));
+        String ctx = c < 0 ? "" : Uri.decode(raw.substring(c + 5));
+        performAiSearch(tab, query.trim(), ctx);
+    }
+
+    void performAiSearch(final Tab tab, final String query, final String ctx) {
+        final String url = WWW + "internal/search.html?ai=1&q=" + Uri.encode(query) + (ctx.isEmpty() ? "" : "&follow=1");
         tab.displayByUrl.put(url, "kithe://ai?q=" + Uri.encode(query));
         try {
             loadAssetPage(tab, WWW_ASSET + "internal/search.html", url, "window.__voiceSearch = true;window.__aiMode = true;");
@@ -439,7 +457,7 @@ public class MainActivity extends Activity {
             setSearchState(tab, url, query, true, new JSONObject());
             return;
         }
-        privateSearch(query, true, outcome -> setSearchState(tab, url, query, true, outcome));
+        privateSearch(ctx.isEmpty() ? query : ctx + "\n\nUser: " + query, true, outcome -> setSearchState(tab, url, query, true, outcome));
     }
 
     // Reads the Google results page in a separate, signed-out process.
@@ -612,7 +630,9 @@ public class MainActivity extends Activity {
                 }
             }
             case "search:voice": startVoiceSearch(); return null;
-            case "search:ai": openAiMode(a.optString("q", "")); return null;
+            case "search:ai": openAiMode(Uri.encode(a.optString("q", ""))); return null;
+            case "ai:get": return aiModeOn;
+            case "ai:set": setAiMode(a.optBoolean("on")); return null;
             case "image:download": downloadImage(reqId, a.getString("srcURL"), a.getString("name")); return ASYNC;
             default: return null;
         }
@@ -833,7 +853,7 @@ public class MainActivity extends Activity {
         JSONObject settings = store.settings();
         String trimmed = raw.trim();
         if (trimmed.isEmpty()) {
-            tab.view.loadUrl("about:blank");
+            navigateTab(id, "home.local");
             return;
         }
         String host = extractHostname(trimmed);
@@ -842,6 +862,8 @@ public class MainActivity extends Activity {
             activateEntry(tab, host, entry);
         } else if (looksLikeDomain(trimmed)) {
             tab.view.loadUrl(SCHEME.matcher(trimmed).matches() ? trimmed : "https://" + trimmed);
+        } else if (aiModeOn && !forceWeb) {
+            performAiSearch(tab, trimmed, "");
         } else {
             performSearch(tab, trimmed, settings, "web");
         }
@@ -899,7 +921,7 @@ public class MainActivity extends Activity {
     // so pages can read window.__* data synchronously on startup.
     void loadAssetPage(Tab tab, String assetPath, String url, String prelude) throws IOException {
         String html = readAsset(assetPath);
-        String tag = "<script>" + prelude + "</script>";
+        String tag = "<script>" + prelude + "window.__aiOn = " + aiModeOn + ";</script>";
         int i = html.indexOf("<head>");
         html = i >= 0 ? html.substring(0, i + 6) + tag + html.substring(i + 6) : tag + html;
         tab.view.loadDataWithBaseURL(url, html, "text/html", "UTF-8", url);
@@ -1002,7 +1024,12 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
                 if (url.startsWith("kithe-search:")) {
-                    navigateTab(tab.id, Uri.decode(url.substring("kithe-search:".length())));
+                    forceWeb = true;
+                    try {
+                        navigateTab(tab.id, Uri.decode(url.substring("kithe-search:".length())));
+                    } finally {
+                        forceWeb = false;
+                    }
                     return true;
                 }
                 for (String kind : new String[] { "images", "news", "videos" }) {
@@ -1011,12 +1038,20 @@ public class MainActivity extends Activity {
                         return true;
                     }
                 }
+                if (url.startsWith("kithe-aimode:")) {
+                    setAiMode(!aiModeOn);
+                    return true;
+                }
+                if (url.startsWith("kithe-installigx:")) {
+                    new Thread(() -> IgxInstaller.run(MainActivity.this, msg -> runOnUiThread(() -> Toast.makeText(MainActivity.this, msg, Toast.LENGTH_LONG).show()))).start();
+                    return true;
+                }
                 if (url.startsWith("kithe-voice:")) {
                     startVoiceSearch();
                     return true;
                 }
                 if (url.startsWith("kithe-ai:")) {
-                    openAiMode(Uri.decode(url.substring("kithe-ai:".length())));
+                    openAiMode(url.substring("kithe-ai:".length()));
                     return true;
                 }
                 if (url.startsWith("kithe-bookmark-action:")) {

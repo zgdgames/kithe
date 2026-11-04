@@ -178,9 +178,16 @@ reloadBtn.addEventListener('click', () => {
 newTabBtn.addEventListener('click', () => window.browserAPI.newTab());
 if (window.browserAPI.voiceSearch) voiceBtn.classList.remove('hidden');
 voiceBtn.addEventListener('click', () => window.browserAPI.voiceSearch());
+let aiOn = false;
+function setAiOn(on) {
+  aiOn = !!on;
+  aiBtn.classList.toggle('on', aiOn);
+}
+window.browserAPI.onAiMode((d) => setAiOn(d.on));
+window.browserAPI.getAiMode().then(setAiOn);
 aiBtn.addEventListener('click', () => {
-  const typed = document.activeElement === addressBar ? addressBar.value.trim() : '';
-  window.browserAPI.aiSearch(typed);
+  setAiOn(!aiOn);
+  window.browserAPI.setAiMode(aiOn);
 });
 
 // --- Panels ---

@@ -85,6 +85,7 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_large_info" />
         </receiver>
         <receiver android:name=".UpdateReceiver" android:exported="false" />
+        <receiver android:name=".IgxInstallReceiver" android:exported="false" />
         <service android:name=".UpdateJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

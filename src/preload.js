@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('browserAPI', {
 
   appVersion: () => ipcRenderer.invoke('app:version'),
   aiSearch: (q) => ipcRenderer.invoke('search:ai', { q }),
+  getAiMode: () => ipcRenderer.invoke('ai:get'),
+  setAiMode: (on) => ipcRenderer.invoke('ai:set', { on }),
+  onAiMode: (cb) => ipcRenderer.on('ai:mode', (e, data) => cb(data)),
 
   installAsApp: (payload) => ipcRenderer.invoke('app:install', payload),
 

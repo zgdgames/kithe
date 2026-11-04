@@ -33,6 +33,7 @@ public class PrivateSearchService extends Service {
     private final Handler main = new Handler(Looper.getMainLooper());
     private String extractJs;
     private static boolean suffixSet;
+    private WebView spare;
 
     private final Messenger messenger = new Messenger(new Handler(Looper.getMainLooper()) {
         @Override
@@ -61,6 +62,32 @@ public class PrivateSearchService extends Service {
         imagesJs = asset("www/internal/images-extract.js");
         CookieManager.getInstance().removeAllCookies(null);
         WebStorage.getInstance().deleteAllData();
+        warm();
+    }
+
+    // A ready-made page that has already opened a connection to Google, so
+    // the next search starts with no browser start-up or handshake to wait for.
+    private void warm() {
+        if (spare != null) return;
+        WebView w = new WebView(getApplicationContext());
+        WebSettings s = w.getSettings();
+        s.setJavaScriptEnabled(true);
+        s.setDomStorageEnabled(true);
+        s.setSaveFormData(false);
+        s.setUserAgentString(UA);
+        w.setWebViewClient(new WebViewClient());
+        float d = getResources().getDisplayMetrics().density;
+        w.layout(0, 0, Math.round(412 * d), Math.round(915 * d));
+        w.loadUrl("https://www.google.com/generate_204");
+        spare = w;
+    }
+
+    private WebView takeWeb() {
+        if (spare == null) warm();
+        WebView w = spare;
+        spare = null;
+        main.postDelayed(this::warm, 400);
+        return w;
     }
 
     private String asset(String path) {
@@ -143,24 +170,16 @@ public class PrivateSearchService extends Service {
         }
 
         void start() {
-            web = new WebView(getApplicationContext());
-            WebSettings s = web.getSettings();
-            s.setJavaScriptEnabled(true);
-            s.setDomStorageEnabled(true);
-            s.setSaveFormData(false);
-            s.setUserAgentString(UA);
-            web.setWebViewClient(new WebViewClient());
-            float d = getResources().getDisplayMetrics().density;
-            web.layout(0, 0, Math.round(412 * d), Math.round(915 * d));
+            web = takeWeb();
             if (ai) {
                 web.loadUrl("https://www.google.com/search?hl=en&udm=50&q=" + android.net.Uri.encode(query));
-                main.postDelayed(this::pollAi, 3500);
+                main.postDelayed(this::pollAi, 2200);
                 main.postDelayed(() -> finish(null, "AI Mode timed out"), 50000);
                 return;
             }
             String vertical = "images".equals(kind) ? "&udm=2" : "videos".equals(kind) ? "&udm=7" : "news".equals(kind) ? "&tbm=nws" : "";
             web.loadUrl("https://www.google.com/search?hl=en" + vertical + "&q=" + android.net.Uri.encode(query));
-            main.postDelayed(this::poll, 1200);
+            main.postDelayed(this::poll, 450);
             main.postDelayed(() -> finish(null, "Search timed out"), 25000);
         }
 
@@ -177,11 +196,11 @@ public class PrivateSearchService extends Service {
                 }
                 if (text.length() > 25) {
                     if (text.equals(prevText)) stable++; else { stable = 0; prevText = text; }
-                    if (stable >= 2) { finishAi(text); return; }
+                    if (stable >= 3) { finishAi(text); return; }
                 }
                 polls++;
-                if (polls > 36) { finishAi(text.length() > 25 ? text : ""); return; }
-                main.postDelayed(this::pollAi, 1200);
+                if (polls > 60) { finishAi(text.length() > 25 ? text : ""); return; }
+                main.postDelayed(this::pollAi, 700);
             });
         }
 
@@ -209,9 +228,9 @@ public class PrivateSearchService extends Service {
                 polls++;
                 if (count > 0 && count == lastCount) stable++; else stable = 0;
                 lastCount = count;
-                if (count > 0 && stable >= 1) { finish(o, null); return; }
-                if (polls >= 14) { finish(count > 0 ? o : null, count > 0 ? null : "No results came back"); return; }
-                main.postDelayed(this::poll, 800);
+                if (count >= 6 || (count > 0 && stable >= 1)) { finish(o, null); return; }
+                if (polls >= 30) { finish(count > 0 ? o : null, count > 0 ? null : "No results came back"); return; }
+                main.postDelayed(this::poll, 350);
             });
         }
 

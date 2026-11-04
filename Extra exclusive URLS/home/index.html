@@ -145,6 +145,7 @@
       padding: 0;
       flex-shrink: 0;
     }
+    .searchTool.on, .searchTool.on:hover { background: linear-gradient(135deg, var(--accent), #8b5cf6); color: white; }
     .searchTool:hover { background: var(--card); color: var(--text); }
     .hidden { display: none !important; }
 
@@ -335,13 +336,14 @@
 
     if (window.__voiceSearch) document.getElementById('voiceBtn').classList.remove('hidden');
     document.getElementById('voiceBtn').addEventListener('click', () => { window.location.href = 'kithe-voice:search'; });
-    document.getElementById('aiBtn').addEventListener('click', () => {
-      window.location.href = 'kithe-ai:' + encodeURIComponent(document.getElementById('searchInput').value.trim());
-    });
+    const aiBtn = document.getElementById('aiBtn');
+    window.__setAiOn = (on) => { window.__aiOn = !!on; aiBtn.classList.toggle('on', !!on); };
+    window.__setAiOn(window.__aiOn);
+    aiBtn.addEventListener('click', () => { window.location.href = 'kithe-aimode:toggle'; });
     document.getElementById('searchForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const q = document.getElementById('searchInput').value.trim();
-      if (q) window.location.href = 'kithe-search:' + encodeURIComponent(q);
+      if (q) window.location.href = (window.__aiOn ? 'kithe-ai:' : 'kithe-search:') + encodeURIComponent(q);
     });
 
     // --- Exclusive apps row (under the search bar) ---

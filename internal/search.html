@@ -230,6 +230,14 @@
     .aicard { max-width: 720px; background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 16px 18px; }
     .aicard p { margin: 0 0 12px; font-size: 15px; line-height: 1.6; }
     .aicard p:last-child { margin-bottom: 0; }
+    #installbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 20px 0; max-width: 720px; padding: 10px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 16px; font-size: 14px; color: var(--text-dim); }
+    #installbar.hidden { display: none; }
+    #installBtn { flex: none; border: none; border-radius: 999px; padding: 8px 16px; font-size: 14px; font-weight: 600; color: white; background: linear-gradient(135deg, var(--accent), #8b5cf6); cursor: var(--cursor-pointer); }
+    .ububble { align-self: flex-end; max-width: 85%; background: linear-gradient(135deg, var(--accent), #8b5cf6); color: white; border-radius: 18px 18px 6px 18px; padding: 10px 14px; font-size: 15px; line-height: 1.5; margin-left: auto; width: fit-content; }
+    #results.chat { display: flex; flex-direction: column; gap: 12px; }
+    #composer { display: flex; gap: 8px; align-items: center; position: sticky; bottom: 10px; background: var(--card); border: 1px solid var(--border); border-radius: 999px; padding: 6px 6px 6px 16px; }
+    #composer input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--text); font-size: 15px; }
+    #composer button { flex: none; width: 38px; height: 38px; border: none; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #8b5cf6); color: white; display: flex; align-items: center; justify-content: center; cursor: var(--cursor-pointer); }
     .state-box button { margin-top: 10px; background: var(--accent); color: white; border: none; border-radius: 999px; padding: 8px 18px; font-size: 14px; cursor: var(--cursor-pointer); }
   </style>
 </head>
@@ -250,6 +258,7 @@
     <button class="stab" id="newsTab" type="button">News</button>
     <button class="stab" id="videosTab" type="button">Videos</button>
   </div>
+  <div id="installbar" class="hidden"><span>Want IGX Assistant on your phone?</span><button id="installBtn" type="button">Install the app</button></div>
   <div id="bar" class="bar"></div>
   <div id="stats" class="hidden"></div>
   <div id="answer" class="hidden"></div>
@@ -268,6 +277,8 @@
     const isAi = !!window.__aiMode || new URLSearchParams(location.search).get('ai') === '1';
     const kind = new URLSearchParams(location.search).get('kind') || 'web';
     document.body.classList.toggle('ai', isAi);
+    document.getElementById('installbar').classList.toggle('hidden', !isAi);
+    document.getElementById('installBtn').addEventListener('click', () => { window.location.href = 'kithe-installigx:go'; });
     document.getElementById(isAi ? 'aiTab' : kind === 'web' ? 'allTab' : kind + 'Tab').classList.add('active');
     for (const k of ['images', 'news', 'videos']) {
       document.getElementById(k + 'Tab').addEventListener('click', () => {
@@ -277,6 +288,37 @@
     document.getElementById('allTab').addEventListener('click', () => {
       window.location.href = 'kithe-search:' + encodeURIComponent(input.value.trim());
     });
+
+    const follow = new URLSearchParams(location.search).get('follow') === '1';
+    const pendingQ = new URLSearchParams(location.search).get('q') || '';
+    input.value = pendingQ;
+    let chat = [];
+    if (isAi && follow) { try { chat = JSON.parse(localStorage.getItem('kitheAiChat') || '[]'); } catch (e) {} }
+    let recorded = false;
+    function saveChat() { try { localStorage.setItem('kitheAiChat', JSON.stringify(chat.slice(-12))); } catch (e) {} }
+    function context() {
+      const recent = chat.slice(-4).map((t) => 'User: ' + t.q + '\nAssistant: ' + t.a.slice(0, 600)).join('\n');
+      return recent ? 'Earlier in this conversation:\n' + recent + '\n\nContinue the conversation and answer the latest user message.' : '';
+    }
+    function sendFollowUp(msg) {
+      window.location.href = 'kithe-ai:' + encodeURIComponent(msg) + '&ctx=' + encodeURIComponent(context());
+    }
+    function turnsHtml() {
+      return chat.map((t) => '<div class="ububble">' + escapeHtml(t.q) + '</div><div class="aicard"><div class="aihead"><div class="aidot"></div>IGX Assistant</div>'
+        + String(t.a).split('\n').map((x) => x.trim()).filter(Boolean).map((x) => '<p>' + escapeHtml(x) + '</p>').join('') + '</div>').join('');
+    }
+    function composerHtml() {
+      return '<form id="composer"><input id="composerInput" type="text" placeholder="Message IGX Assistant" autocomplete="off" spellcheck="false" /><button type="submit" title="Send"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></form>';
+    }
+    function wireComposer() {
+      const f = document.getElementById('composer');
+      if (!f) return;
+      f.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const msg = document.getElementById('composerInput').value.trim();
+        if (msg) sendFollowUp(msg);
+      });
+    }
 
     function syncClear() { clearBtn.classList.toggle('hidden', !input.value); }
     input.addEventListener('input', syncClear);
@@ -288,7 +330,7 @@
     document.getElementById('searchForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const q = input.value.trim();
-      if (q) window.location.href = (isAi ? 'kithe-ai:' : 'kithe-search:') + encodeURIComponent(q);
+      if (q) window.location.href = (isAi || window.__aiOn ? 'kithe-ai:' : 'kithe-search:') + encodeURIComponent(q);
     });
 
     function pretty(u) {
@@ -305,7 +347,12 @@
       const resultsEl = document.getElementById('results');
       const bar = document.getElementById('bar');
       if (!state) {
-        resultsEl.innerHTML = '<div class="loading">' + (isAi && input.value !== undefined ? 'Thinking…' : 'Searching…') + '</div>';
+        if (isAi && pendingQ) {
+          resultsEl.classList.add('chat');
+          resultsEl.innerHTML = turnsHtml() + '<div class="ububble">' + escapeHtml(pendingQ) + '</div><div class="loading">Thinking…</div>';
+        } else {
+          resultsEl.innerHTML = '<div class="loading">' + (isAi ? 'Thinking…' : 'Searching…') + '</div>';
+        }
         setTimeout(render, 80);
         return;
       }
@@ -319,18 +366,24 @@
       if (state.answer && !isAi) { answerEl.textContent = state.answer; answerEl.classList.remove('hidden'); }
 
       if (isAi) {
+        resultsEl.classList.add('chat');
         if (!state.query) {
           resultsEl.innerHTML = '<div class="state-box"><h2>AI Mode</h2>Ask anything and the IGX Assistant will answer.</div>';
           return;
         }
         if (state.error) {
-          resultsEl.innerHTML = `<div class="state-box"><h2>No answer</h2>${escapeHtml(state.error)}<br><button id="retry" type="button">Try again</button></div>`;
-          document.getElementById('retry').addEventListener('click', () => { window.location.href = 'kithe-ai:' + encodeURIComponent(state.query); });
+          resultsEl.innerHTML = turnsHtml() + `<div class="ububble">${escapeHtml(state.query)}</div><div class="state-box"><h2>No answer</h2>${escapeHtml(state.error)}<br><button id="retry" type="button">Try again</button></div>` + composerHtml();
+          document.getElementById('retry').addEventListener('click', () => sendFollowUp(state.query));
+          wireComposer();
           return;
         }
-        const paras = String(state.answer || '').split('\n').map((x) => x.trim()).filter(Boolean);
-        resultsEl.innerHTML = '<div class="aicard"><div class="aihead"><div class="aidot"></div>IGX Assistant</div>'
-          + paras.map((x) => '<p>' + escapeHtml(x) + '</p>').join('') + '</div>';
+        if (!recorded) {
+          recorded = true;
+          chat.push({ q: state.query, a: String(state.answer || '') });
+          saveChat();
+        }
+        resultsEl.innerHTML = turnsHtml() + composerHtml();
+        wireComposer();
         return;
       }
 

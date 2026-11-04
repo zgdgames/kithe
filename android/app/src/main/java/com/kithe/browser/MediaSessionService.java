@@ -9,9 +9,17 @@ import android.content.Context;
 import android.content.Intent;
 import android.media.session.MediaSession;
 import android.media.session.PlaybackState;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
+import android.provider.Settings;
+import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
+import android.view.WindowManager;
+import android.widget.ImageView;
 
 // Keeps a tab's audio or video playing after the user leaves the app, the
 // same way a music app does: a foreground service with a media-style
@@ -24,6 +32,9 @@ public class MediaSessionService extends Service {
 
     private MediaSession session;
     private PowerManager.WakeLock wakeLock;
+    private WindowManager wm;
+    private ImageView bubble;
+    private boolean bubblePlaying;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -76,6 +87,7 @@ public class MediaSessionService extends Service {
             .setState(playing ? PlaybackState.STATE_PLAYING : PlaybackState.STATE_PAUSED, 0, 1f)
             .build());
         startForeground(1002, notification(title == null ? "Playing" : title, playing));
+        showBubble(playing);
         return START_NOT_STICKY;
     }
 
@@ -107,8 +119,95 @@ public class MediaSessionService extends Service {
         return b.build();
     }
 
+    // A small draggable button pinned near the top-left, like the "now
+    // playing" chip other media apps show over everything else, so there is
+    // something to tap besides pulling down the notification shade.
+    private void showBubble(boolean playing) {
+        bubblePlaying = playing;
+        if (bubble != null) {
+            paintBubble();
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) return;
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        int type = Build.VERSION.SDK_INT >= 26 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
+        WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+            dp(44), dp(44), type,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT);
+        lp.gravity = Gravity.TOP | Gravity.START;
+        lp.x = dp(12);
+        lp.y = dp(90);
+        bubble = new ImageView(this);
+        bubble.setPadding(dp(10), dp(10), dp(10), dp(10));
+        paintBubble();
+        bubble.setOnTouchListener(new View.OnTouchListener() {
+            float downX, downY;
+            int startX, startY;
+            boolean moved;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent e) {
+                switch (e.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downX = e.getRawX();
+                        downY = e.getRawY();
+                        startX = lp.x;
+                        startY = lp.y;
+                        moved = false;
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        int nx = startX + (int) (e.getRawX() - downX);
+                        int ny = startY + (int) (e.getRawY() - downY);
+                        if (Math.abs(nx - startX) > 6 || Math.abs(ny - startY) > 6) moved = true;
+                        lp.x = nx;
+                        lp.y = ny;
+                        try {
+                            wm.updateViewLayout(bubble, lp);
+                        } catch (Exception ignored) {
+                        }
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                        if (!moved) sendTo(bubblePlaying ? ACTION_PAUSE : ACTION_PLAY);
+                        return true;
+                }
+                return false;
+            }
+        });
+        try {
+            wm.addView(bubble, lp);
+        } catch (Exception ignored) {
+            bubble = null;
+        }
+    }
+
+    private void paintBubble() {
+        if (bubble == null) return;
+        GradientDrawable bg = new GradientDrawable();
+        bg.setShape(GradientDrawable.OVAL);
+        bg.setColor(Color.parseColor("#7C5CFF"));
+        bubble.setBackground(bg);
+        bubble.setImageResource(bubblePlaying ? android.R.drawable.ic_media_pause : android.R.drawable.ic_media_play);
+        bubble.setColorFilter(Color.WHITE);
+    }
+
+    private int dp(int v) {
+        return Math.round(v * getResources().getDisplayMetrics().density);
+    }
+
+    private void hideBubble() {
+        if (bubble != null && wm != null) {
+            try {
+                wm.removeView(bubble);
+            } catch (Exception ignored) {
+            }
+            bubble = null;
+        }
+    }
+
     private void stop() {
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        hideBubble();
         stopForeground(true);
         stopSelf();
     }
@@ -116,6 +215,7 @@ public class MediaSessionService extends Service {
     @Override
     public void onDestroy() {
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        hideBubble();
         if (session != null) session.release();
         super.onDestroy();
     }

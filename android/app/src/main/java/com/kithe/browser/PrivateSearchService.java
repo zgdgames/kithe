@@ -192,7 +192,7 @@ public class PrivateSearchService extends Service {
             web = takeWeb();
             if (ai) {
                 web.loadUrl("https://www.google.com/search?hl=en&udm=50&q=" + android.net.Uri.encode(query));
-                main.postDelayed(this::pollAi, 2200);
+                main.postDelayed(this::pollAi, 1100);
                 main.postDelayed(() -> finish(null, "AI Mode timed out"), 50000);
                 return;
             }
@@ -214,12 +214,12 @@ public class PrivateSearchService extends Service {
                 } catch (Exception ignored) {
                 }
                 if (text.length() > 25) {
-                    if (text.equals(prevText)) stable++; else { stable = 0; prevText = text; }
-                    if (stable >= 3) { finishAi(text); return; }
+                    if (text.equals(prevText)) stable++; else { stable = 0; sendPartial(text); prevText = text; }
+                    if (stable >= 2) { finishAi(text); return; }
                 }
                 polls++;
-                if (polls > 60) { finishAi(text.length() > 25 ? text : ""); return; }
-                main.postDelayed(this::pollAi, 700);
+                if (polls > 70) { finishAi(text.length() > 25 ? text : ""); return; }
+                main.postDelayed(this::pollAi, 450);
             });
         }
 
@@ -266,6 +266,21 @@ public class PrivateSearchService extends Service {
                 return;
             }
             reply(o, error);
+        }
+
+        // Sends the answer as it grows, so the page can show it typing in
+        // instead of sitting on "Thinking..." until the whole thing is done.
+        void sendPartial(String text) {
+            try {
+                JSONObject res = new JSONObject().put("ai", true).put("answer", text).put("partial", true);
+                Message m = Message.obtain(null, MSG_RESULT);
+                m.arg1 = reqId;
+                Bundle b = new Bundle();
+                b.putString("json", res.toString());
+                m.setData(b);
+                replyTo.send(m);
+            } catch (Exception ignored) {
+            }
         }
 
         void reply(JSONObject o, String error) {

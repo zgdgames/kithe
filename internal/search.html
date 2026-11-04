@@ -280,20 +280,23 @@
     document.getElementById('installbar').classList.toggle('hidden', !isAi);
     document.getElementById('installBtn').addEventListener('click', () => { window.location.href = 'kithe-installigx:go'; });
     document.getElementById(isAi ? 'aiTab' : kind === 'web' ? 'allTab' : kind + 'Tab').classList.add('active');
-    for (const k of ['images', 'news', 'videos']) {
-      document.getElementById(k + 'Tab').addEventListener('click', () => {
-        window.location.href = 'kithe-' + k + ':' + encodeURIComponent(input.value.trim());
-      });
-    }
-    document.getElementById('allTab').addEventListener('click', () => {
-      window.location.href = 'kithe-search:' + encodeURIComponent(input.value.trim());
-    });
-
     const follow = new URLSearchParams(location.search).get('follow') === '1';
     const pendingQ = new URLSearchParams(location.search).get('q') || '';
     input.value = pendingQ;
     let chat = [];
     if (isAi && follow) { try { chat = JSON.parse(localStorage.getItem('kitheAiChat') || '[]'); } catch (e) {} }
+    // The box fills in with whatever you just asked the AI, but switching to
+    // a regular search tab should search what you first came here for, not
+    // the last follow-up message.
+    const origQuery = (chat[0] && chat[0].q) || pendingQ;
+    function switchTo(target) {
+      const q = isAi ? (origQuery || input.value.trim()) : input.value.trim();
+      window.location.href = (target === 'web' ? 'kithe-search:' : 'kithe-' + target + ':') + encodeURIComponent(q);
+    }
+    for (const k of ['images', 'news', 'videos']) {
+      document.getElementById(k + 'Tab').addEventListener('click', () => switchTo(k));
+    }
+    document.getElementById('allTab').addEventListener('click', () => switchTo('web'));
     let recorded = false;
     function saveChat() { try { localStorage.setItem('kitheAiChat', JSON.stringify(chat.slice(-12))); } catch (e) {} }
     function context() {
@@ -342,6 +345,7 @@
     }
     function host(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
 
+    window.__kitheRender = render;
     function render() {
       const state = window.__searchState;
       const resultsEl = document.getElementById('results');
@@ -375,6 +379,12 @@
           resultsEl.innerHTML = turnsHtml() + `<div class="ububble">${escapeHtml(state.query)}</div><div class="state-box"><h2>No answer</h2>${escapeHtml(state.error)}<br><button id="retry" type="button">Try again</button></div>` + composerHtml();
           document.getElementById('retry').addEventListener('click', () => sendFollowUp(state.query));
           wireComposer();
+          return;
+        }
+        if (state.partial) {
+          const paras = String(state.answer || '').split('\n').map((x) => x.trim()).filter(Boolean);
+          resultsEl.innerHTML = turnsHtml() + '<div class="ububble">' + escapeHtml(state.query) + '</div><div class="aicard"><div class="aihead"><div class="aidot"></div>IGX Assistant</div>'
+            + paras.map((x) => '<p>' + escapeHtml(x) + '</p>').join('') + '</div>';
           return;
         }
         if (!recorded) {

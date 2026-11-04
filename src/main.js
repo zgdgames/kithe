@@ -358,7 +358,7 @@ function privateGoogleSearch(query, kind = 'web') {
       last = n;
       if (n > 0 && stable >= 1) finish(o);
       else if (polls >= 24) finish(n > 0 ? o : { error: 'No results came back' });
-    }, 800);
+    }, 500);
     win.loadURL('https://www.google.com/search?hl=en' + ({ ai: '&udm=50', images: '&udm=2', videos: '&udm=7', news: '&tbm=nws' }[kind] || '') + '&q=' + encodeURIComponent(query)).catch(() => {});
   });
 }

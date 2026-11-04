@@ -15,6 +15,7 @@ import android.content.ContentValues;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
@@ -34,6 +35,7 @@ import android.content.ServiceConnection;
 import android.speech.RecognizerIntent;
 import android.view.inputmethod.InputMethodManager;
 import android.provider.MediaStore;
+import android.provider.Settings;
 import android.util.Base64;
 import android.view.MotionEvent;
 import android.view.View;
@@ -146,14 +148,14 @@ public class MainActivity extends Activity {
         @Override
         public void handleMessage(Message m) {
             if (m.what != PrivateSearchService.MSG_RESULT) return;
-            SearchCallback cb = searchCallbacks.remove(m.arg1);
-            if (cb == null) return;
             JSONObject o;
             try {
                 o = new JSONObject(m.getData().getString("json", "{}"));
             } catch (JSONException e) {
                 o = new JSONObject();
             }
+            SearchCallback cb = o.optBoolean("partial") ? searchCallbacks.get(m.arg1) : searchCallbacks.remove(m.arg1);
+            if (cb == null) return;
             cb.done(o);
             scheduleUnbind();
         }
@@ -620,6 +622,16 @@ public class MainActivity extends Activity {
             mediaServiceRunning = true;
             Intent i = new Intent(this, MediaSessionService.class).setAction(MediaSessionService.ACTION_PLAY).putExtra("title", title);
             startForegroundService(i);
+            if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+                SharedPreferences prefs = getSharedPreferences("ui", MODE_PRIVATE);
+                if (!prefs.getBoolean("askedOverlay", false)) {
+                    prefs.edit().putBoolean("askedOverlay", true).apply();
+                    try {
+                        startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
         } else if (tab.id == mediaTabId) {
             mediaServiceRunning = false;
             startService(new Intent(this, MediaSessionService.class).setAction(MediaSessionService.ACTION_STOP));
@@ -1060,7 +1072,7 @@ public class MainActivity extends Activity {
                     state.put(k, outcome.get(k));
                 }
             }
-            String script = "window.__searchState = " + state + ";";
+            String script = "window.__searchState = " + state + ";if(window.__kitheRender)window.__kitheRender();";
             tab.injections.put(url, script);
             if (url.equals(tab.finishedUrl)) tab.view.evaluateJavascript(script, null);
         } catch (JSONException ignored) {

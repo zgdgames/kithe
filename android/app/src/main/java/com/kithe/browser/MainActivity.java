@@ -12,7 +12,9 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.BroadcastReceiver;
 import android.content.Context;
+import android.content.IntentFilter;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ShortcutInfo;
@@ -241,6 +243,12 @@ public class MainActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
 
+        IntentFilter mf = new IntentFilter();
+        mf.addAction(MediaSessionService.ACTION_PLAY);
+        mf.addAction(MediaSessionService.ACTION_PAUSE);
+        mf.addAction(MediaSessionService.ACTION_STOP);
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(mediaControl, mf, Context.RECEIVER_NOT_EXPORTED); else registerReceiver(mediaControl, mf);
+
         root = new FrameLayout(this);
         root.setBackgroundColor(BG);
         root.setFitsSystemWindows(true);
@@ -342,6 +350,10 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        try {
+            unregisterReceiver(mediaControl);
+        } catch (Exception ignored) {
+        }
         if (privateBinding) {
             try {
                 unbindService(privateConn);
@@ -581,6 +593,56 @@ public class MainActivity extends Activity {
         chrome.evaluateJavascript("window.__kitheResolve(" + reqId + "," + JSONObject.quote(json) + ")", null);
     }
 
+    // A single-purpose bridge given to every tab (not the full native Bridge,
+    // which only the chrome page gets) so a page can report play/pause state
+    // without exposing anything else to arbitrary web content.
+    class MediaReport {
+        final Tab tab;
+
+        MediaReport(Tab tab) {
+            this.tab = tab;
+        }
+
+        @JavascriptInterface
+        public void report(boolean playing, String title) {
+            runOnUiThread(() -> onMediaState(tab, playing, title));
+        }
+    }
+
+    boolean mediaServiceRunning;
+    int mediaTabId = -1;
+
+    // Starts or stops the background-playback notification/service to match
+    // what is actually playing in the active tab.
+    void onMediaState(Tab tab, boolean playing, String title) {
+        if (playing) {
+            mediaTabId = tab.id;
+            mediaServiceRunning = true;
+            Intent i = new Intent(this, MediaSessionService.class).setAction(MediaSessionService.ACTION_PLAY).putExtra("title", title);
+            startForegroundService(i);
+        } else if (tab.id == mediaTabId) {
+            mediaServiceRunning = false;
+            startService(new Intent(this, MediaSessionService.class).setAction(MediaSessionService.ACTION_STOP));
+        }
+    }
+
+    final BroadcastReceiver mediaControl = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context c, Intent intent) {
+            Tab tab = tabs.get(mediaTabId);
+            if (tab == null) return;
+            String action = intent.getAction();
+            if (MediaSessionService.ACTION_PAUSE.equals(action)) {
+                tab.view.evaluateJavascript("[].forEach.call(document.querySelectorAll('video,audio'),function(m){if(!m.paused)m.pause();})", null);
+            } else if (MediaSessionService.ACTION_PLAY.equals(action)) {
+                tab.view.evaluateJavascript("var m=document.querySelector('video,audio');if(m)m.play();", null);
+            } else if (MediaSessionService.ACTION_STOP.equals(action)) {
+                tab.view.evaluateJavascript("[].forEach.call(document.querySelectorAll('video,audio'),function(m){m.pause();})", null);
+                mediaServiceRunning = false;
+            }
+        }
+    };
+
     class Bridge {
         @JavascriptInterface
         public void invoke(final int reqId, final String channel, final String argsJson) {
@@ -793,6 +855,10 @@ public class MainActivity extends Activity {
     void closeTabKeepingOne(int id) {
         Tab tab = tabs.remove(id);
         if (tab == null) return;
+        if (id == mediaTabId) {
+            mediaServiceRunning = false;
+            startService(new Intent(this, MediaSessionService.class).setAction(MediaSessionService.ACTION_STOP));
+        }
         tabOrder.remove((Integer) id);
         tabHost.removeView(tab.view);
         tab.view.destroy();
@@ -844,6 +910,10 @@ public class MainActivity extends Activity {
     void closeTab(int id) {
         Tab tab = tabs.remove(id);
         if (tab == null) return;
+        if (id == mediaTabId) {
+            mediaServiceRunning = false;
+            startService(new Intent(this, MediaSessionService.class).setAction(MediaSessionService.ACTION_STOP));
+        }
         tabOrder.remove((Integer) id);
         tabHost.removeView(tab.view);
         tab.view.destroy();
@@ -1035,6 +1105,7 @@ public class MainActivity extends Activity {
 
     WebView makeTabView(final Tab tab) {
         final WebView wv = new WebView(this);
+        wv.addJavascriptInterface(new MediaReport(tab), "KitheMedia");
         WebSettings s = wv.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -1128,6 +1199,7 @@ public class MainActivity extends Activity {
                 tab.finishedUrl = url;
                 String script = tab.injections.get(url);
                 if (script != null) view.evaluateJavascript(script, null);
+                view.evaluateJavascript(MEDIA_WATCH_JS, null);
                 sendTabState(tab);
             }
 
@@ -1497,6 +1569,23 @@ public class MainActivity extends Activity {
             return null;
         }
     }
+
+    // Watches every video/audio element on the page (including ones added
+    // later) and tells the app whenever playback starts, pauses or ends, so
+    // a foreground notification can keep it going after the user leaves.
+    static final String MEDIA_WATCH_JS = "(function(){if(window.__kitheMediaWatch)return;window.__kitheMediaWatch=true;"
+        + "function report(el,playing){var t=(document.title||'').trim()||(el&&el.currentSrc?el.currentSrc.split('/').pop():'')||'Playing';"
+        + "if(window.KitheMedia)window.KitheMedia.report(!!playing,t);}"
+        + "function watch(el){if(el.__kitheWatched)return;el.__kitheWatched=true;"
+        + "el.addEventListener('play',function(){report(el,true);});"
+        + "el.addEventListener('playing',function(){report(el,true);});"
+        + "function anyPlaying(){return [].some.call(document.querySelectorAll('video,audio'),function(m){return !m.paused&&!m.ended;});}"
+        + "el.addEventListener('pause',function(){report(el,anyPlaying());});"
+        + "el.addEventListener('ended',function(){report(el,false);});}"
+        + "function scan(){[].forEach.call(document.querySelectorAll('video,audio'),watch);}"
+        + "scan();new MutationObserver(scan).observe(document.documentElement,{childList:true,subtree:true});"
+        + "window.addEventListener('pagehide',function(){report(null,false);});"
+        + "})()";
 
     static final String ICON_JS = "(function(){var o={icons:[],manifest:''};var l=document.querySelectorAll('link[rel]');"
             + "for(var i=0;i<l.length;i++){var r=(l[i].getAttribute('rel')||'').toLowerCase();var h=l[i].href;if(!h)continue;"

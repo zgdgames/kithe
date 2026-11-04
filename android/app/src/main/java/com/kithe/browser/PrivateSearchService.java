@@ -80,10 +80,29 @@ public class PrivateSearchService extends Service {
         w.layout(0, 0, Math.round(412 * d), Math.round(915 * d));
         w.loadUrl("https://www.google.com/generate_204");
         spare = w;
+        main.postDelayed(retire, 25000);
+    }
+
+    private final Runnable retire = () -> {
+        if (spare != null) {
+            spare.destroy();
+            spare = null;
+        }
+    };
+
+    @Override
+    public void onDestroy() {
+        main.removeCallbacks(retire);
+        if (spare != null) {
+            spare.destroy();
+            spare = null;
+        }
+        super.onDestroy();
     }
 
     private WebView takeWeb() {
         if (spare == null) warm();
+        main.removeCallbacks(retire);
         WebView w = spare;
         spare = null;
         main.postDelayed(this::warm, 400);

@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
 import android.content.ComponentName;
+import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.app.DownloadManager;
@@ -152,8 +153,30 @@ public class MainActivity extends Activity {
                 o = new JSONObject();
             }
             cb.done(o);
+            scheduleUnbind();
         }
     });
+
+    private final Handler idleHandler = new Handler(Looper.getMainLooper());
+    private final Runnable unbindIdle = this::unbindPrivate;
+
+    void unbindPrivate() {
+        if (searchCallbacks.isEmpty() && privateBinding) {
+            try {
+                unbindService(privateConn);
+            } catch (Exception ignored) {
+            }
+            privateBinding = false;
+            privateService = null;
+        }
+    }
+
+    // The hidden search browser only lives while it is needed, so it never
+    // takes memory or CPU away from the page you are typing in.
+    void scheduleUnbind() {
+        idleHandler.removeCallbacks(unbindIdle);
+        idleHandler.postDelayed(unbindIdle, 45000);
+    }
     private final ServiceConnection privateConn = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder binder) {
@@ -199,7 +222,6 @@ public class MainActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(false);
         store = new Store(getFilesDir());
         aiModeOn = getSharedPreferences("ui", MODE_PRIVATE).getBoolean("aiOn", false);
-        if (!privateBinding) privateBinding = bindService(new Intent(this, PrivateSearchService.class), privateConn, Context.BIND_AUTO_CREATE);
         try {
             registry = new JSONObject(readAsset(WWW_ASSET + EXCLUSIVE + "registry.json"));
             // Apps that need a desktop server ship a self-contained mobile
@@ -470,6 +492,7 @@ public class MainActivity extends Activity {
     }
 
     void privateSearch(String query, String kind, SearchCallback cb) {
+        idleHandler.removeCallbacks(unbindIdle);
         int id = nextSearchId++;
         searchCallbacks.put(id, cb);
         Message m = Message.obtain(null, PrivateSearchService.MSG_SEARCH);
@@ -806,8 +829,16 @@ public class MainActivity extends Activity {
         Tab tab = tabs.get(id);
         if (tab == null) return;
         activeTabId = id;
-        for (Tab t : tabs.values()) t.view.setVisibility(t.id == id ? View.VISIBLE : View.GONE);
+        for (Tab t : tabs.values()) applyTabState(t, t.id == id);
         sendTabState(tab);
+    }
+
+    // Only the tab you are looking at gets full speed; the others are paused
+    // and ranked lowest so they can't slow down the page you are typing in.
+    void applyTabState(Tab t, boolean active) {
+        t.view.setVisibility(active ? View.VISIBLE : View.GONE);
+        if (active) t.view.onResume(); else t.view.onPause();
+        if (Build.VERSION.SDK_INT >= 26) t.view.setRendererPriorityPolicy(active ? WebView.RENDERER_PRIORITY_IMPORTANT : WebView.RENDERER_PRIORITY_WAIVED, true);
     }
 
     void closeTab(int id) {
@@ -1016,6 +1047,7 @@ public class MainActivity extends Activity {
         s.setDisplayZoomControls(false);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
+        s.setUserAgentString(s.getUserAgentString().replace("; wv", "").replace(" Version/4.0", ""));
                 CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(wv, true);
 

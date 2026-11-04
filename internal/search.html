@@ -280,15 +280,13 @@
     document.getElementById('installbar').classList.toggle('hidden', !isAi);
     document.getElementById('installBtn').addEventListener('click', () => { window.location.href = 'kithe-installigx:go'; });
     document.getElementById(isAi ? 'aiTab' : kind === 'web' ? 'allTab' : kind + 'Tab').classList.add('active');
-    const follow = new URLSearchParams(location.search).get('follow') === '1';
     const pendingQ = new URLSearchParams(location.search).get('q') || '';
-    input.value = pendingQ;
-    let chat = [];
-    if (isAi && follow) { try { chat = JSON.parse(localStorage.getItem('kitheAiChat') || '[]'); } catch (e) {} }
-    // The box fills in with whatever you just asked the AI, but switching to
-    // a regular search tab should search what you first came here for, not
-    // the last follow-up message.
-    const origQuery = (chat[0] && chat[0].q) || pendingQ;
+    // The native side (not localStorage, so each tab's thread stays its
+    // own) hands back this tab's earlier turns and its first question, so
+    // the box and the thread survive a tab switch or an app restart intact.
+    const chat = window.__aiHistory ? window.__aiHistory.slice() : [];
+    const origQuery = window.__aiTopQuery || (chat[0] && chat[0].q) || pendingQ;
+    input.value = isAi ? origQuery : pendingQ;
     function switchTo(target) {
       const q = isAi ? (origQuery || input.value.trim()) : input.value.trim();
       window.location.href = (target === 'web' ? 'kithe-search:' : 'kithe-' + target + ':') + encodeURIComponent(q);
@@ -298,13 +296,10 @@
     }
     document.getElementById('allTab').addEventListener('click', () => switchTo('web'));
     let recorded = false;
-    function saveChat() { try { localStorage.setItem('kitheAiChat', JSON.stringify(chat.slice(-12))); } catch (e) {} }
-    function context() {
-      const recent = chat.slice(-4).map((t) => 'User: ' + t.q + '\nAssistant: ' + t.a.slice(0, 600)).join('\n');
-      return recent ? 'Earlier in this conversation:\n' + recent + '\n\nContinue the conversation and answer the latest user message.' : '';
-    }
+    // The native side keeps the same Google AI Mode page open per tab, so a
+    // follow-up just needs the new message; Google remembers the rest.
     function sendFollowUp(msg) {
-      window.location.href = 'kithe-ai:' + encodeURIComponent(msg) + '&ctx=' + encodeURIComponent(context());
+      window.location.href = 'kithe-ai:' + encodeURIComponent(msg);
     }
     function turnsHtml() {
       return chat.map((t) => '<div class="ububble">' + escapeHtml(t.q) + '</div><div class="aicard"><div class="aihead"><div class="aidot"></div>IGX Assistant</div>'
@@ -361,7 +356,7 @@
         return;
       }
       bar.classList.add('hidden');
-      input.value = state.query || '';
+      input.value = isAi ? origQuery : (state.query || '');
       syncClear();
 
       const statsEl = document.getElementById('stats');
@@ -390,7 +385,6 @@
         if (!recorded) {
           recorded = true;
           chat.push({ q: state.query, a: String(state.answer || '') });
-          saveChat();
         }
         resultsEl.innerHTML = turnsHtml() + composerHtml();
         wireComposer();

@@ -25,9 +25,9 @@ import java.io.InputStream;
 public class PrivateSearchService extends Service {
     static final int MSG_SEARCH = 1;
     static final int MSG_RESULT = 2;
+    static final int MSG_CLOSE_SESSION = 3;
     static final String UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36";
 
-    private String aiJs;
     private String imagesJs;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -35,12 +35,38 @@ public class PrivateSearchService extends Service {
     private static boolean suffixSet;
     private WebView spare;
 
+    private final java.util.Map<Integer, AiSession> aiSessions = new java.util.HashMap<>();
+
     private final Messenger messenger = new Messenger(new Handler(Looper.getMainLooper()) {
         @Override
         public void handleMessage(Message m) {
-            if (m.what == MSG_SEARCH && m.replyTo != null) new Search(m.getData().getString("q", ""), m.replyTo, m.arg1, m.getData().getString("kind", "web")).start();
+            if (m.what == MSG_SEARCH && m.replyTo != null) {
+                int tabId = m.getData().getInt("tabId", 0);
+                String kind = m.getData().getString("kind", "web");
+                if ("ai".equals(kind)) {
+                    aiAsk(tabId, m.getData().getString("q", ""), m.replyTo, m.arg1);
+                } else {
+                    new Search(m.getData().getString("q", ""), m.replyTo, m.arg1, kind).start();
+                }
+            } else if (m.what == MSG_CLOSE_SESSION) {
+                AiSession s = aiSessions.remove(m.arg1);
+                if (s != null) s.destroy();
+            }
         }
     });
+
+    // A follow-up asks the SAME live Google AI Mode page the next question,
+    // the way a person would keep chatting on the page, instead of reloading
+    // a new page and pasting the whole conversation into one query.
+    void aiAsk(int tabId, String query, Messenger replyTo, int reqId) {
+        AiSession s = aiSessions.get(tabId);
+        if (s == null || !s.alive()) {
+            if (s != null) s.destroy();
+            s = new AiSession(getApplicationContext());
+            aiSessions.put(tabId, s);
+        }
+        s.ask(query, replyTo, reqId);
+    }
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -58,7 +84,6 @@ public class PrivateSearchService extends Service {
             }
         }
         extractJs = asset("www/internal/search-extract.js");
-        aiJs = asset("www/internal/ai-extract.js");
         imagesJs = asset("www/internal/images-extract.js");
         CookieManager.getInstance().removeAllCookies(null);
         WebStorage.getInstance().deleteAllData();
@@ -171,8 +196,6 @@ public class PrivateSearchService extends Service {
         final Messenger replyTo;
         final int reqId;
         final String kind;
-        final boolean ai;
-        String prevText = "";
         long deadline;
         WebView web;
         boolean done;
@@ -182,7 +205,6 @@ public class PrivateSearchService extends Service {
 
         Search(String query, Messenger replyTo, int reqId, String kind) {
             this.kind = kind;
-            this.ai = "ai".equals(kind);
             this.query = query;
             this.replyTo = replyTo;
             this.reqId = reqId;
@@ -190,45 +212,10 @@ public class PrivateSearchService extends Service {
 
         void start() {
             web = takeWeb();
-            if (ai) {
-                web.loadUrl("https://www.google.com/search?hl=en&udm=50&q=" + android.net.Uri.encode(query));
-                main.postDelayed(this::pollAi, 1100);
-                main.postDelayed(() -> finish(null, "AI Mode timed out"), 50000);
-                return;
-            }
             String vertical = "images".equals(kind) ? "&udm=2" : "videos".equals(kind) ? "&udm=7" : "news".equals(kind) ? "&tbm=nws" : "";
             web.loadUrl("https://www.google.com/search?hl=en" + vertical + "&q=" + android.net.Uri.encode(query));
             main.postDelayed(this::poll, 450);
             main.postDelayed(() -> finish(null, "Search timed out"), 25000);
-        }
-
-        void pollAi() {
-            if (done || web == null) return;
-            if (aiJs == null) { finish(null, "AI Mode is unavailable"); return; }
-            web.evaluateJavascript(aiJs + "(" + JSONObject.quote(query) + ")", value -> {
-                if (done) return;
-                String text = "";
-                try {
-                    Object v = new JSONTokener(value).nextValue();
-                    text = v == null || v == JSONObject.NULL ? "" : v.toString().trim();
-                } catch (Exception ignored) {
-                }
-                if (text.length() > 25) {
-                    if (text.equals(prevText)) stable++; else { stable = 0; sendPartial(text); prevText = text; }
-                    if (stable >= 2) { finishAi(text); return; }
-                }
-                polls++;
-                if (polls > 70) { finishAi(text.length() > 25 ? text : ""); return; }
-                main.postDelayed(this::pollAi, 450);
-            });
-        }
-
-        void finishAi(String text) {
-            try {
-                finish(new JSONObject().put("ai", true).put("answer", text), text.isEmpty() ? "AI Mode had no answer for that" : null);
-            } catch (Exception e) {
-                finish(null, "AI Mode failed");
-            }
         }
 
         void poll() {
@@ -268,21 +255,6 @@ public class PrivateSearchService extends Service {
             reply(o, error);
         }
 
-        // Sends the answer as it grows, so the page can show it typing in
-        // instead of sitting on "Thinking..." until the whole thing is done.
-        void sendPartial(String text) {
-            try {
-                JSONObject res = new JSONObject().put("ai", true).put("answer", text).put("partial", true);
-                Message m = Message.obtain(null, MSG_RESULT);
-                m.arg1 = reqId;
-                Bundle b = new Bundle();
-                b.putString("json", res.toString());
-                m.setData(b);
-                replyTo.send(m);
-            } catch (Exception ignored) {
-            }
-        }
-
         void reply(JSONObject o, String error) {
             try {
                 JSONObject res = o != null ? o : new JSONObject();
@@ -300,6 +272,161 @@ public class PrivateSearchService extends Service {
                 web.destroy();
                 web = null;
             }
+        }
+    }
+
+    // One tab's AI Mode conversation. The first question loads Google's AI
+    // Mode page; every question after that is typed into that SAME page and
+    // submitted, so Google sees one real ongoing chat, not a series of new
+    // searches with the history pasted into the query text.
+    private static final String LINES_JS =
+        "(function(){return JSON.stringify((document.body?document.body.innerText:'').split('\\n').map(function(x){return x.trim();}).filter(Boolean));})()";
+
+    private static final String ANSWER_JS =
+        "(function(q,base){function n(x){return (x||'').toLowerCase().replace(/[\\s?!.,]+$/,'').replace(/\\s+/g,' ').trim();}"
+        + "function esc(x){return x.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\$&');}"
+        + "var heading=new RegExp('^AI Mode reply for\\\\s+'+esc(q)+'\\\\s*','i');"
+        + "function clip(x){return x.replace(heading,'');}"
+        + "var lines=(document.body?document.body.innerText:'').split('\\n').map(function(x){return x.trim();}).filter(Boolean);"
+        + "var end=/^(Add files and tools|Ask about|Ask anything|Ask a follow|Follow-up|AI can make mistakes|Microphone|Transcribing\\.\\.\\.|Upload image|My Ad Center)/i;"
+        + "var skip=/^(Show all|Show more|Show less|Copy|Share|Shared|Good response|Bad response|Sources?|Retry|Send|Stop|Thinking.*|Searching.*|Looking.*|Working.*|Generating.*|\\d+ files?|AI Mode|AI Mode reply for.*|Sign in|Feedback|Dive deeper.*|AI responses may include mistakes.*)$/i;"
+        + "var idx=-1;for(var i=0;i<lines.length;i++){if(n(lines[i])===n(q))idx=i;}"
+        + "var out=[];"
+        + "if(idx>=0){for(var j=idx+1;j<lines.length;j++){if(end.test(lines[j]))break;if(skip.test(lines[j]))continue;var c=clip(lines[j]);if(c)out.push(c);}}"
+        + "if(!out.length&&base){var seen={};base.forEach(function(b){seen[b]=1;});"
+        + "for(var k=0;k<lines.length;k++){var l=lines[k];if(seen[l]||end.test(l)||skip.test(l)||n(l)===n(q))continue;var c=clip(l);if(c)out.push(c);}}"
+        + "return out.join(' ');})";
+
+    private static final String SEND_JS =
+        "(function(q){var vis=function(x){return x.offsetParent!==null;};var ta=[].slice.call(document.querySelectorAll('textarea')).filter(vis)[0];if(!ta){var c=[].slice.call(document.querySelectorAll('[contenteditable=true]')).filter(vis)[0];if(!c)return 'noinput';c.focus();document.execCommand('insertText',false,q);}else{ta.focus();var set=Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set;set.call(ta,q);ta.dispatchEvent(new Event('input',{bubbles:true}));ta.dispatchEvent(new Event('change',{bubbles:true}));}setTimeout(function(){var b=[].slice.call(document.querySelectorAll('button,[role=button]')).filter(function(x){return /^(send|submit)/i.test((x.getAttribute('aria-label')||x.innerText||'').trim())&&vis(x);})[0];if(b){b.click();}else{var t=ta||document.activeElement;['keydown','keypress','keyup'].forEach(function(nm){t.dispatchEvent(new KeyboardEvent(nm,{key:'Enter',code:'Enter',keyCode:13,which:13,bubbles:true}));});}},400);return 'ok';})";
+
+    final class AiSession {
+        private final android.content.Context ctx;
+        private WebView web;
+        private boolean started;
+        private boolean destroyed;
+        private String q, prevText = "", baseline = "null";
+        private int polls, stable;
+        private long deadline;
+        private Messenger replyTo;
+        private int reqId;
+        private final Runnable expire = this::destroy;
+
+        AiSession(android.content.Context ctx) {
+            this.ctx = ctx;
+        }
+
+        boolean alive() {
+            return !destroyed;
+        }
+
+        void destroy() {
+            destroyed = true;
+            main.removeCallbacks(expire);
+            if (web != null) {
+                web.stopLoading();
+                web.destroy();
+                web = null;
+            }
+        }
+
+        void ask(String query, Messenger replyTo, int reqId) {
+            main.removeCallbacks(expire);
+            this.replyTo = replyTo;
+            this.reqId = reqId;
+            q = query;
+            polls = 0;
+            stable = 0;
+            prevText = "";
+            deadline = System.currentTimeMillis() + (started ? 40000 : 50000);
+            if (web == null) {
+                web = new WebView(ctx);
+                WebSettings s = web.getSettings();
+                s.setJavaScriptEnabled(true);
+                s.setDomStorageEnabled(true);
+                s.setSaveFormData(false);
+                s.setUserAgentString(UA);
+                web.setWebViewClient(new WebViewClient());
+                float d = getResources().getDisplayMetrics().density;
+                web.layout(0, 0, Math.round(412 * d), Math.round(915 * d));
+            }
+            if (!started) {
+                started = true;
+                baseline = "null";
+                web.loadUrl("https://www.google.com/search?hl=en&udm=50&q=" + android.net.Uri.encode(query));
+                main.postDelayed(() -> web.evaluateJavascript(LINES_JS, v -> {
+                    try {
+                        baseline = new JSONTokener(v).nextValue().toString();
+                    } catch (Exception e) {
+                        baseline = "null";
+                    }
+                    poll();
+                }), 1100);
+            } else {
+                web.evaluateJavascript(LINES_JS, v -> {
+                    try {
+                        baseline = new JSONTokener(v).nextValue().toString();
+                    } catch (Exception e) {
+                        baseline = "null";
+                    }
+                    web.evaluateJavascript(SEND_JS + "(" + JSONObject.quote(query) + ")", r -> {
+                        if (r != null && r.contains("noinput")) { started = false; finish(null, "AI Mode had no answer for that"); return; }
+                        main.postDelayed(this::poll, 1500);
+                    });
+                });
+            }
+        }
+
+        private void poll() {
+            if (destroyed || web == null) return;
+            web.evaluateJavascript(ANSWER_JS + "(" + JSONObject.quote(q) + "," + baseline + ")", value -> {
+                if (destroyed) return;
+                String text = "";
+                try {
+                    Object v = new JSONTokener(value).nextValue();
+                    text = v == null || v == JSONObject.NULL ? "" : v.toString().trim();
+                } catch (Exception ignored) {
+                }
+                if (text.length() > 25) {
+                    if (text.equals(prevText)) stable++; else { stable = 0; sendPartial(text); prevText = text; }
+                    if (stable >= 2) { finish(text, null); return; }
+                }
+                polls++;
+                if (System.currentTimeMillis() > deadline || polls > 70) {
+                    finish(text.length() > 25 ? text : null, text.length() > 25 ? null : "AI Mode had no answer for that");
+                    return;
+                }
+                main.postDelayed(this::poll, 450);
+            });
+        }
+
+        private void sendPartial(String text) {
+            try {
+                JSONObject res = new JSONObject().put("ai", true).put("answer", text).put("partial", true);
+                Message m = Message.obtain(null, MSG_RESULT);
+                m.arg1 = reqId;
+                Bundle b = new Bundle();
+                b.putString("json", res.toString());
+                m.setData(b);
+                replyTo.send(m);
+            } catch (Exception ignored) {
+            }
+        }
+
+        private void finish(String text, String error) {
+            try {
+                JSONObject res = new JSONObject().put("ai", true);
+                if (text != null) res.put("answer", text);
+                if (error != null) res.put("error", error);
+                Message m = Message.obtain(null, MSG_RESULT);
+                m.arg1 = reqId;
+                Bundle b = new Bundle();
+                b.putString("json", res.toString());
+                m.setData(b);
+                replyTo.send(m);
+            } catch (Exception ignored) {
+            }
+            main.postDelayed(expire, 10 * 60 * 1000L);
         }
     }
 }

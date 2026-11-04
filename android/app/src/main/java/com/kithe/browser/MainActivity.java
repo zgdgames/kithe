@@ -108,6 +108,9 @@ public class MainActivity extends Activity {
         final Map<String, String> displayByUrl = new HashMap<>();
         // Loaded URL -> script to run once that page has finished loading.
         final Map<String, String> injections = new HashMap<>();
+        boolean aiSessionActive;
+        String aiFirstQuery;
+        JSONArray aiChat = new JSONArray();
     }
 
     static volatile boolean visible = false;
@@ -163,6 +166,16 @@ public class MainActivity extends Activity {
 
     private final Handler idleHandler = new Handler(Looper.getMainLooper());
     private final Runnable unbindIdle = this::unbindPrivate;
+
+    void closeAiSession(int tabId) {
+        if (privateService == null) return;
+        try {
+            Message m = Message.obtain(null, PrivateSearchService.MSG_CLOSE_SESSION);
+            m.arg1 = tabId;
+            privateService.send(m);
+        } catch (Exception ignored) {
+        }
+    }
 
     void unbindPrivate() {
         if (searchCallbacks.isEmpty() && privateBinding) {
@@ -226,6 +239,7 @@ public class MainActivity extends Activity {
         WebView.setWebContentsDebuggingEnabled(false);
         store = new Store(getFilesDir());
         aiModeOn = getSharedPreferences("ui", MODE_PRIVATE).getBoolean("aiOn", false);
+        startService(new Intent(this, TaskTracker.class));
         try {
             registry = new JSONObject(readAsset(WWW_ASSET + EXCLUSIVE + "registry.json"));
             // Apps that need a desktop server ship a self-contained mobile
@@ -308,7 +322,10 @@ public class MainActivity extends Activity {
                     Uri data = in == null ? null : in.getData();
                     boolean opensLink = data != null && Intent.ACTION_VIEW.equals(in.getAction());
                     int first = opensLink ? createTab(data.toString(), null) : createTab(null, null);
-                    offerRestoreTabs(first, opensLink);
+                    SharedPreferences ui = getSharedPreferences("ui", MODE_PRIVATE);
+                    boolean explicitlyClosed = ui.getBoolean("taskRemoved", false);
+                    ui.edit().putBoolean("taskRemoved", false).apply();
+                    offerRestoreTabs(first, opensLink, explicitlyClosed);
                     runWidgetAction(in);
                 }
             }
@@ -474,17 +491,27 @@ public class MainActivity extends Activity {
     void openAiMode(String raw) {
         Tab tab = tabs.get(activeTabId);
         if (tab == null) return;
-        int c = raw.indexOf("&ctx=");
-        String query = Uri.decode(c < 0 ? raw : raw.substring(0, c));
-        String ctx = c < 0 ? "" : Uri.decode(raw.substring(c + 5));
-        performAiSearch(tab, query.trim(), ctx);
+        performAiSearch(tab, Uri.decode(raw).trim());
     }
 
-    void performAiSearch(final Tab tab, final String query, final String ctx) {
-        final String url = WWW + "internal/search.html?ai=1&q=" + Uri.encode(query) + (ctx.isEmpty() ? "" : "&follow=1");
-        tab.displayByUrl.put(url, "kithe://ai?q=" + Uri.encode(query));
+    // Every question asked in this tab's AI Mode goes to the SAME live
+    // Google AI Mode page (kept open in PrivateSearchService, keyed by this
+    // tab's id), so a follow-up is a real follow-up, not a fresh search with
+    // the past conversation pasted into the query.
+    void performAiSearch(final Tab tab, final String query) {
+        final boolean fresh = !tab.aiSessionActive;
+        if (fresh) {
+            tab.aiFirstQuery = query;
+            tab.aiChat = new JSONArray();
+        }
+        // The top bar and the page's own search box always show the first
+        // question of this tab's AI conversation, never a follow-up's text.
+        final String topQuery = tab.aiFirstQuery != null ? tab.aiFirstQuery : query;
+        final String url = WWW + "internal/search.html?ai=1&q=" + Uri.encode(query);
+        tab.displayByUrl.put(url, "kithe://ai?q=" + Uri.encode(topQuery));
+        tab.aiSessionActive = true;
         try {
-            loadAssetPage(tab, WWW_ASSET + "internal/search.html", url, "window.__voiceSearch = true;window.__aiMode = true;");
+            loadAssetPage(tab, WWW_ASSET + "internal/search.html", url, "window.__voiceSearch = true;window.__aiMode = true;window.__aiTopQuery = " + JSONObject.quote(topQuery) + ";");
         } catch (IOException e) {
             tab.view.loadUrl(url);
             return;
@@ -493,7 +520,16 @@ public class MainActivity extends Activity {
             setSearchState(tab, url, query, true, new JSONObject());
             return;
         }
-        privateSearch(ctx.isEmpty() ? query : ctx + "\n\nUser: " + query, true, outcome -> setSearchState(tab, url, query, true, outcome));
+        privateSearchFor(tab.id, query, "ai", outcome -> {
+            setSearchState(tab, url, query, true, outcome);
+            if (!outcome.optBoolean("partial") && outcome.has("answer") && !outcome.has("error")) {
+                try {
+                    tab.aiChat.put(new JSONObject().put("q", query).put("a", outcome.optString("answer")));
+                } catch (JSONException ignored) {
+                }
+                scheduleSaveTabs();
+            }
+        });
     }
 
     // Reads the Google results page in a separate, signed-out process.
@@ -506,6 +542,10 @@ public class MainActivity extends Activity {
     }
 
     void privateSearch(String query, String kind, SearchCallback cb) {
+        privateSearchFor(0, query, kind, cb);
+    }
+
+    void privateSearchFor(int tabId, String query, String kind, SearchCallback cb) {
         idleHandler.removeCallbacks(unbindIdle);
         int id = nextSearchId++;
         searchCallbacks.put(id, cb);
@@ -515,6 +555,7 @@ public class MainActivity extends Activity {
         Bundle b = new Bundle();
         b.putString("q", query);
         b.putString("kind", kind);
+        b.putInt("tabId", tabId);
         m.setData(b);
         if (privateService != null) {
             try {
@@ -789,14 +830,23 @@ public class MainActivity extends Activity {
         saveHandler.postDelayed(saveTabsTick, 600);
     }
 
-    String savedUrl(Tab tab) {
+    // A plain string for an ordinary tab, or {"ai":true,"q":...,"chat":[...]}
+    // for one sitting in AI Mode, so reopening it can show the whole thread
+    // instead of just the last thing asked.
+    Object savedRecord(Tab tab) {
+        if (tab.aiSessionActive && tab.aiFirstQuery != null) {
+            try {
+                return new JSONObject().put("ai", true).put("q", tab.aiFirstQuery).put("chat", tab.aiChat);
+            } catch (JSONException e) {
+                return null;
+            }
+        }
         String url = displayUrl(tab);
         if (url == null || url.isEmpty() || url.equals("about:blank")) return null;
         if (url.startsWith("kithe://search?q=")) return Uri.decode(url.substring("kithe://search?q=".length()));
         for (String k : new String[] { "images", "news", "videos" }) {
             if (url.startsWith("kithe://" + k + "?q=")) return Uri.decode(url.substring(("kithe://" + k + "?q=").length()));
         }
-        if (url.startsWith("kithe://ai?q=")) return Uri.decode(url.substring("kithe://ai?q=".length()));
         return url;
     }
 
@@ -809,17 +859,17 @@ public class MainActivity extends Activity {
             for (int id : tabOrder) {
                 Tab t = tabs.get(id);
                 if (t == null) continue;
-                String u = savedUrl(t);
-                if (u == null) continue;
+                Object r = savedRecord(t);
+                if (r == null) continue;
                 if (id == activeTabId) active = list.length();
-                list.put(u);
+                list.put(r);
             }
             store.write("tabs.json", new JSONObject().put("active", active).put("tabs", list).toString());
         } catch (JSONException ignored) {
         }
     }
 
-    void offerRestoreTabs(final int firstTabId, boolean opensLink) {
+    void offerRestoreTabs(final int firstTabId, boolean opensLink, boolean explicitlyClosed) {
         JSONArray saved = null;
         int active = 0;
         try {
@@ -833,7 +883,7 @@ public class MainActivity extends Activity {
             saved = null;
         }
         boolean worthAsking = saved != null && (saved.length() > 1
-                || (saved.length() == 1 && !"http://home.local/".equals(saved.optString(0))));
+                || (saved.length() == 1 && !"http://home.local/".equals(saved.opt(0))));
         if (!worthAsking) {
             saveTabsEnabled = true;
             scheduleSaveTabs();
@@ -842,6 +892,13 @@ public class MainActivity extends Activity {
         final JSONArray urls = saved;
         final int activeIndex = active;
         final boolean keepFirst = opensLink;
+        if (!explicitlyClosed) {
+            // The app wasn't actually closed - the system just reclaimed its
+            // memory in the background - so the tabs come back exactly as
+            // they were, with no prompt.
+            restoreTabs(firstTabId, keepFirst, urls, activeIndex);
+            return;
+        }
         KitheDialog.show(this, "Open your tabs?",
                 "You had " + urls.length() + (urls.length() == 1 ? " tab" : " tabs") + " open last time.",
                 null, "Open tabs", () -> restoreTabs(firstTabId, keepFirst, urls, activeIndex),
@@ -856,7 +913,10 @@ public class MainActivity extends Activity {
         if (!keepFirst) closeTabKeepingOne(firstTabId);
         int activeId = -1;
         for (int i = 0; i < urls.length(); i++) {
-            int id = createTab(urls.optString(i), null);
+            Object r = urls.opt(i);
+            int id = r instanceof JSONObject && ((JSONObject) r).optBoolean("ai")
+                    ? createAiTab(((JSONObject) r).optString("q"), ((JSONObject) r).optJSONArray("chat"))
+                    : createTab(String.valueOf(r), null);
             if (i == activeIndex) activeId = id;
         }
         if (activeId != -1) switchTab(activeId);
@@ -867,6 +927,7 @@ public class MainActivity extends Activity {
     void closeTabKeepingOne(int id) {
         Tab tab = tabs.remove(id);
         if (tab == null) return;
+        if (tab.aiSessionActive) closeAiSession(id);
         if (id == mediaTabId) {
             mediaServiceRunning = false;
             startService(new Intent(this, MediaSessionService.class).setAction(MediaSessionService.ACTION_STOP));
@@ -881,7 +942,7 @@ public class MainActivity extends Activity {
         if (activeTabId == id) activeTabId = -1;
     }
 
-    int createTab(String initialUrl, Message transportMsg) {
+    Tab newTab() {
         final Tab tab = new Tab();
         tab.id = nextTabId++;
         tab.view = makeTabView(tab);
@@ -893,12 +954,51 @@ public class MainActivity extends Activity {
         } catch (JSONException ignored) {
         }
         switchTab(tab.id);
+        return tab;
+    }
+
+    int createTab(String initialUrl, Message transportMsg) {
+        final Tab tab = newTab();
         if (transportMsg != null) {
             WebView.WebViewTransport transport = (WebView.WebViewTransport) transportMsg.obj;
             transport.setWebView(tab.view);
             transportMsg.sendToTarget();
         } else {
             navigateTab(tab.id, initialUrl != null ? initialUrl : "home.local");
+        }
+        return tab.id;
+    }
+
+    // Rebuilds a tab that was in AI Mode across an app restart: shows the
+    // whole saved thread, with no further polling, and picks up as a
+    // continuing conversation if the user asks another follow-up.
+    int createAiTab(String firstQuery, JSONArray chat) {
+        final Tab tab = newTab();
+        tab.aiFirstQuery = firstQuery;
+        tab.aiChat = chat != null ? chat : new JSONArray();
+        tab.aiSessionActive = true;
+        final String url = WWW + "internal/search.html?ai=1&q=" + Uri.encode(firstQuery);
+        tab.displayByUrl.put(url, "kithe://ai?q=" + Uri.encode(firstQuery));
+        try {
+            JSONArray prior = new JSONArray();
+            String lastQ = firstQuery, lastA = "";
+            boolean hadTurn = false;
+            for (int i = 0; i < tab.aiChat.length(); i++) {
+                JSONObject t = tab.aiChat.optJSONObject(i);
+                if (t == null) continue;
+                if (i < tab.aiChat.length() - 1) {
+                    prior.put(t);
+                } else {
+                    lastQ = t.optString("q", firstQuery);
+                    lastA = t.optString("a", "");
+                    hadTurn = true;
+                }
+            }
+            String prelude = "window.__voiceSearch = true;window.__aiMode = true;window.__aiHistory = " + prior + ";";
+            loadAssetPage(tab, WWW_ASSET + "internal/search.html", url, prelude);
+            if (hadTurn) setSearchState(tab, url, lastQ, true, new JSONObject().put("ai", true).put("answer", lastA));
+        } catch (Exception e) {
+            tab.view.loadUrl(url);
         }
         return tab.id;
     }
@@ -922,6 +1022,7 @@ public class MainActivity extends Activity {
     void closeTab(int id) {
         Tab tab = tabs.remove(id);
         if (tab == null) return;
+        if (tab.aiSessionActive) closeAiSession(id);
         if (id == mediaTabId) {
             mediaServiceRunning = false;
             startService(new Intent(this, MediaSessionService.class).setAction(MediaSessionService.ACTION_STOP));
@@ -976,7 +1077,7 @@ public class MainActivity extends Activity {
         } else if (looksLikeDomain(trimmed)) {
             tab.view.loadUrl(SCHEME.matcher(trimmed).matches() ? trimmed : "https://" + trimmed);
         } else if (aiModeOn && !forceWeb) {
-            performAiSearch(tab, trimmed, "");
+            performAiSearch(tab, trimmed);
         } else {
             performSearch(tab, trimmed, settings, "web");
         }

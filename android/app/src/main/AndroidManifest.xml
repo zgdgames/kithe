@@ -92,5 +92,6 @@
         <receiver android:name=".IgxInstallReceiver" android:exported="false" />
         <service android:name=".UpdateJobService" android:exported="false" android:permission="android.permission.BIND_JOB_SERVICE" />
         <service android:name=".MediaSessionService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
+        <service android:name=".TaskTracker" android:exported="false" />
     </application>
 </manifest>

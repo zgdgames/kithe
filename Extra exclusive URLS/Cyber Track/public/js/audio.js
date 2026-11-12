@@ -8,10 +8,15 @@ const Snd = (() => {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     ac = new AC();
-    master = ac.createGain(); master.gain.value = muted ? 0 : 0.8; master.connect(ac.destination);
+    master = ac.createGain(); master.gain.value = muted || hushed ? 0 : 0.8; master.connect(ac.destination);
     const comp = ac.createDynamicsCompressor(); comp.connect(master);
     sfxBus = ac.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(comp);
-    engBus = ac.createGain(); engBus.gain.value = 0.5; engBus.connect(comp);
+    // short room echo so effects have some space around them
+    const send = ac.createGain(); send.gain.value = 0.22;
+    const d1 = ac.createDelay(0.5), d2 = ac.createDelay(0.5), fb = ac.createGain(), damp = ac.createBiquadFilter();
+    d1.delayTime.value = 0.083; d2.delayTime.value = 0.137; fb.gain.value = 0.34; damp.type = 'lowpass'; damp.frequency.value = 2600;
+    sfxBus.connect(send); send.connect(d1); send.connect(d2); d1.connect(damp); d2.connect(damp); damp.connect(fb); fb.connect(d1); damp.connect(comp);
+    engBus = ac.createGain(); engBus.gain.value = 0.34; engBus.connect(comp);
     musBus = ac.createGain(); musBus.gain.value = 0.16; musBus.connect(comp);
     noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -39,46 +44,54 @@ const Snd = (() => {
     s.connect(f); f.connect(g); g.connect(bus || sfxBus); s.start(t, Math.random()); s.stop(t + dur + 0.05);
   }
 
+  // struck metal: a few inharmonic partials that ring out quickly
+  function metal(f, dur, vol, delay) {
+    [1, 1.51, 2.27, 3.41, 4.63].forEach((m, i) => tone(f * m, f * m * 0.985, dur * (1 - i * 0.13), 'sine', (vol || 0.2) / (1 + i * 0.7), delay));
+  }
+  const chime = (notes, gap, dur, vol, type) => notes.forEach((f, i) => { tone(f, f, dur, type || 'sine', vol, i * gap); tone(f * 2, f * 2, dur * 0.6, 'sine', vol * 0.3, i * gap); });
+  const thump = (f, dur, vol, delay) => tone(f, f * 0.35, dur, 'sine', vol, delay);
+
   const SFX = {
-    click:   () => tone(900, 600, 0.06, 'square', 0.12),
-    select:  () => { tone(500, 800, 0.08, 'triangle', 0.2); tone(800, 1200, 0.1, 'triangle', 0.18, 0.07); },
-    pickup:  () => [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.14, 'square', 0.14, i * 0.05)),
-    boost:   () => { noise(0.7, 400, 5000, 0.35, 0, 1.2, 'bandpass'); tone(160, 700, 0.5, 'sawtooth', 0.12); },
-    repair:  () => { tone(440, 880, 0.3, 'sine', 0.25); tone(660, 1320, 0.3, 'sine', 0.2, 0.1); },
-    shield:  () => { tone(300, 900, 0.4, 'triangle', 0.25); noise(0.4, 3000, 8000, 0.1, 0, 1, 'highpass'); },
-    bump:    () => { tone(140, 50, 0.18, 'sine', 0.5); noise(0.14, 1500, 200, 0.3); },
-    wall:    () => noise(0.18, 3500, 700, 0.18, 0, 2, 'bandpass'),
-    land:    () => { tone(110, 40, 0.25, 'sine', 0.6); noise(0.2, 900, 120, 0.25); },
-    hit:     () => { tone(220, 60, 0.3, 'sawtooth', 0.35); noise(0.3, 2500, 150, 0.4); },
-    explode: () => { noise(1.1, 2500, 60, 0.7); tone(90, 28, 0.9, 'sine', 0.7); tone(200, 50, 0.5, 'sawtooth', 0.2); },
-    missile: () => { noise(0.9, 800, 6000, 0.35, 0, 1, 'bandpass'); tone(300, 120, 0.7, 'sawtooth', 0.12); },
-    emp:     () => { tone(1200, 90, 0.8, 'sawtooth', 0.3); noise(0.6, 6000, 300, 0.25, 0, 1, 'bandpass'); },
-    lightning: () => { noise(0.5, 9000, 800, 0.6, 0, 0.5, 'highpass'); tone(80, 40, 0.6, 'sine', 0.6, 0.05); },
-    warp:    () => { tone(200, 2400, 0.35, 'sine', 0.3); tone(2400, 150, 0.4, 'sine', 0.25, 0.35); },
-    spring:  () => { tone(180, 700, 0.12, 'sine', 0.4); tone(700, 300, 0.25, 'sine', 0.3, 0.1); },
-    cryo:    () => { [2200, 2800, 3300, 3900].forEach((f, i) => tone(f, f * 0.8, 0.5, 'sine', 0.1, i * 0.04)); noise(0.5, 9000, 4000, 0.12, 0, 1, 'highpass'); },
-    leech:   () => { tone(520, 140, 0.45, 'sawtooth', 0.2); tone(260, 520, 0.3, 'sine', 0.2, 0.3); },
-    scramble:() => { for (let i = 0; i < 6; i++) tone(300 + Math.random() * 1500, 300 + Math.random() * 1500, 0.06, 'square', 0.12, i * 0.06); },
-    ghost:   () => { tone(900, 300, 0.6, 'sine', 0.2); tone(905, 303, 0.6, 'sine', 0.2); },
-    jugger:  () => { tone(90, 60, 0.6, 'sawtooth', 0.4); tone(180, 120, 0.6, 'square', 0.15); },
-    swap:    () => { tone(400, 800, 0.15, 'square', 0.18); tone(800, 400, 0.15, 'square', 0.18, 0.15); },
-    nearmiss:() => { tone(900, 1700, 0.12, 'triangle', 0.22); tone(1300, 2200, 0.15, 'triangle', 0.18, 0.08); },
-    vote:    () => { tone(660, 660, 0.18, 'triangle', 0.25); tone(990, 990, 0.3, 'triangle', 0.25, 0.14); },
-    votedone:() => { tone(440, 440, 0.12, 'square', 0.15); tone(660, 660, 0.12, 'square', 0.15, 0.1); tone(880, 880, 0.25, 'square', 0.15, 0.2); },
-    alarm:   () => { tone(880, 880, 0.12, 'square', 0.15); tone(660, 660, 0.12, 'square', 0.15, 0.16); },
-    swell:   () => { noise(1.2, 200, 3000, 0.35, 0, 1, 'bandpass'); },
-    win:     () => [523, 659, 784, 1047, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.22, 'square', 0.16, i * 0.12)),
-    lose:    () => [440, 392, 349, 262].forEach((f, i) => tone(f, f * 0.98, 0.32, 'sawtooth', 0.15, i * 0.2)),
-    trackswap:() => { noise(0.8, 300, 5000, 0.3, 0, 1, 'bandpass'); tone(300, 1200, 0.6, 'triangle', 0.2); },
-    zone:    () => tone(300, 150, 0.35, 'triangle', 0.25),
-    drift:   () => noise(0.25, 2800, 1800, 0.08, 0, 3, 'bandpass'),
-    crash:   () => { noise(0.5, 3500, 150, 0.6); tone(120, 40, 0.4, 'sine', 0.6); [1800, 2700, 3900, 5200].forEach((f, i) => tone(f, f * 0.7, 0.35, 'square', 0.07, 0.02 + i * 0.03)); noise(0.35, 9000, 3000, 0.25, 0.08, 1, 'highpass'); },
-    crashbig:() => { noise(0.9, 4000, 90, 0.8); tone(90, 28, 0.7, 'sine', 0.8); [1500, 2300, 3100, 4400, 6000].forEach((f, i) => tone(f, f * 0.6, 0.5, 'square', 0.08, 0.03 + i * 0.04)); noise(0.6, 9000, 2000, 0.3, 0.1, 1, 'highpass'); },
-    pass:    () => noise(0.4, 600, 2600, 0.18, 0, 1.4, 'bandpass'),
-    pop:     () => { noise(0.07, 2500, 400, 0.3); tone(200, 90, 0.08, 'square', 0.18); noise(0.05, 2200, 500, 0.22, 0.09); },
-    launch:  () => { noise(0.35, 500, 2400, 0.2, 0, 1, 'bandpass'); tone(80, 160, 0.25, 'sine', 0.3); },
-    splash:  () => { noise(0.5, 3000, 500, 0.35, 0, 0.8, 'bandpass'); tone(200, 70, 0.3, 'sine', 0.3); },
-    shift:   () => { noise(0.08, 3000, 800, 0.14); tone(300, 180, 0.07, 'square', 0.1); },
+    click:   () => { tone(1400, 900, 0.035, 'sine', 0.12); noise(0.02, 5000, 2500, 0.05, 0, 1, 'highpass'); },
+    select:  () => chime([660, 990], 0.06, 0.12, 0.16, 'triangle'),
+    pickup:  () => { chime([784, 1047, 1319], 0.045, 0.2, 0.13); noise(0.18, 6000, 9000, 0.04, 0.05, 1, 'highpass'); },
+    boost:   () => { noise(0.9, 300, 4200, 0.3, 0, 0.9, 'bandpass'); noise(0.5, 2500, 9000, 0.1, 0.1, 1, 'highpass'); tone(90, 260, 0.6, 'triangle', 0.22); thump(70, 0.25, 0.4); },
+    repair:  () => { chime([523, 659, 784, 1047], 0.07, 0.3, 0.13); noise(0.4, 4000, 8000, 0.03, 0, 1, 'highpass'); },
+    shield:  () => { tone(220, 660, 0.35, 'sine', 0.22); tone(330, 990, 0.4, 'sine', 0.14, 0.03); noise(0.45, 2000, 7000, 0.07, 0, 2, 'bandpass'); },
+    bump:    () => { thump(130, 0.16, 0.5); noise(0.09, 1800, 300, 0.22); metal(520, 0.12, 0.06); },
+    wall:    () => { noise(0.2, 3200, 900, 0.14, 0, 2.5, 'bandpass'); metal(880, 0.14, 0.04); },
+    land:    () => { thump(95, 0.26, 0.6); noise(0.16, 700, 120, 0.25); noise(0.1, 2500, 800, 0.07, 0.02, 1, 'bandpass'); },
+    hit:     () => { thump(150, 0.22, 0.5); noise(0.22, 2800, 200, 0.35); metal(640, 0.2, 0.08, 0.01); },
+    explode: () => { noise(0.08, 8000, 2000, 0.6); thump(110, 1.0, 0.8); noise(1.3, 1800, 50, 0.7, 0.02); noise(0.9, 5000, 400, 0.2, 0.08, 0.6, 'bandpass'); for (let i = 0; i < 5; i++) noise(0.06, 3000 + Math.random() * 3000, 800, 0.12, 0.25 + Math.random() * 0.7, 2, 'bandpass'); },
+    missile: () => { noise(0.12, 5000, 800, 0.4); noise(1.0, 500, 3800, 0.3, 0.04, 1, 'bandpass'); tone(420, 140, 0.8, 'triangle', 0.1, 0.04); thump(90, 0.2, 0.4); },
+    emp:     () => { tone(1600, 60, 0.9, 'triangle', 0.25); tone(60, 30, 0.9, 'sine', 0.5); noise(0.7, 7000, 200, 0.2, 0, 1.5, 'bandpass'); },
+    lightning: () => { noise(0.05, 10000, 4000, 0.7, 0, 0.5, 'highpass'); noise(0.5, 6000, 500, 0.45, 0.03, 0.5, 'bandpass'); thump(70, 1.1, 0.6, 0.06); noise(1.2, 400, 60, 0.4, 0.1); },
+    warp:    () => { tone(180, 2600, 0.32, 'sine', 0.25); tone(184, 2640, 0.32, 'sine', 0.2); tone(2600, 140, 0.45, 'sine', 0.2, 0.32); noise(0.6, 500, 6000, 0.08, 0, 2, 'bandpass'); },
+    spring:  () => { tone(140, 620, 0.14, 'triangle', 0.4); tone(620, 420, 0.35, 'sine', 0.22, 0.12); metal(300, 0.3, 0.06, 0.02); noise(0.3, 800, 3500, 0.1, 0.05, 1, 'bandpass'); },
+    cryo:    () => { [2093, 2637, 3136, 3951].forEach((f, i) => tone(f, f * 0.9, 0.6, 'sine', 0.08, i * 0.035)); noise(0.6, 9000, 3500, 0.1, 0, 1, 'highpass'); thump(180, 0.3, 0.2); },
+    leech:   () => { tone(480, 130, 0.45, 'triangle', 0.22); tone(240, 520, 0.35, 'sine', 0.2, 0.3); noise(0.5, 900, 300, 0.1, 0, 3, 'bandpass'); },
+    scramble:() => { for (let i = 0; i < 7; i++) tone(300 + Math.random() * 1500, 300 + Math.random() * 1500, 0.05, 'triangle', 0.14, i * 0.05); },
+    ghost:   () => { tone(880, 290, 0.7, 'sine', 0.18); tone(887, 296, 0.7, 'sine', 0.18); noise(0.7, 3000, 700, 0.05, 0, 3, 'bandpass'); },
+    jugger:  () => { thump(110, 0.7, 0.6); tone(82, 62, 0.7, 'sawtooth', 0.16); metal(180, 0.5, 0.1); },
+    swap:    () => { tone(400, 900, 0.14, 'sine', 0.2); tone(900, 400, 0.16, 'sine', 0.2, 0.14); noise(0.3, 1500, 5000, 0.06, 0, 2, 'bandpass'); },
+    nearmiss:() => { noise(0.25, 900, 4500, 0.16, 0, 1.5, 'bandpass'); chime([1175, 1568], 0.07, 0.14, 0.12); },
+    vote:    () => chime([659, 988], 0.13, 0.3, 0.2, 'triangle'),
+    votedone:() => chime([523, 659, 784, 1047], 0.09, 0.28, 0.14, 'triangle'),
+    alarm:   () => { tone(880, 880, 0.13, 'triangle', 0.22); tone(660, 660, 0.16, 'triangle', 0.22, 0.16); },
+    swell:   () => { noise(1.3, 180, 2800, 0.3, 0, 1, 'bandpass'); tone(80, 160, 1.2, 'sine', 0.2); },
+    win:     () => { chime([523, 659, 784, 1047, 784, 1047, 1319], 0.12, 0.35, 0.15, 'triangle'); tone(131, 131, 1.2, 'sine', 0.25); },
+    lose:    () => [440, 392, 349, 262].forEach((f, i) => { tone(f, f * 0.97, 0.4, 'triangle', 0.17, i * 0.2); tone(f / 2, f / 2 * 0.97, 0.4, 'sine', 0.12, i * 0.2); }),
+    trackswap:() => { noise(0.9, 250, 5000, 0.28, 0, 1, 'bandpass'); tone(220, 1100, 0.7, 'sine', 0.18); thump(70, 0.5, 0.4, 0.6); },
+    zone:    () => { tone(330, 165, 0.3, 'sine', 0.22); noise(0.2, 1200, 400, 0.08, 0, 2, 'bandpass'); },
+    drift:   () => noise(0.25, 2400, 1500, 0.06, 0, 3, 'bandpass'),
+    crash:   () => { noise(0.06, 9000, 3000, 0.5); thump(120, 0.4, 0.7); noise(0.45, 3000, 140, 0.55, 0.01); metal(410, 0.45, 0.16, 0.01); metal(1130, 0.3, 0.07, 0.04); noise(0.3, 8000, 3500, 0.14, 0.09, 1, 'highpass'); },
+    crashbig:() => { noise(0.08, 9000, 2500, 0.7); thump(90, 0.8, 0.9); noise(0.9, 3500, 80, 0.75, 0.01); metal(290, 0.8, 0.2, 0.01); metal(760, 0.5, 0.1, 0.06); metal(1500, 0.35, 0.05, 0.12); for (let i = 0; i < 4; i++) noise(0.07, 5000, 1500, 0.14, 0.2 + Math.random() * 0.5, 2, 'bandpass'); },
+    railbreak:() => { noise(0.05, 9000, 3000, 0.55); thump(140, 0.3, 0.6); metal(520, 0.6, 0.2); metal(1340, 0.4, 0.09, 0.03); noise(0.4, 4000, 300, 0.4, 0.01); for (let i = 0; i < 3; i++) metal(700 + Math.random() * 900, 0.18, 0.06, 0.15 + Math.random() * 0.35); },
+    pass:    () => noise(0.45, 500, 2400, 0.16, 0, 1.4, 'bandpass'),
+    pop:     () => { noise(0.05, 2200, 400, 0.22); thump(160, 0.07, 0.2); noise(0.04, 2000, 500, 0.15, 0.08); },
+    launch:  () => { noise(0.35, 400, 2200, 0.18, 0, 1, 'bandpass'); tone(70, 150, 0.25, 'sine', 0.3); },
+    splash:  () => { noise(0.55, 2800, 400, 0.32, 0, 0.8, 'bandpass'); noise(0.3, 6000, 2500, 0.1, 0.05, 1, 'highpass'); thump(170, 0.28, 0.3); },
+    shift:   () => { noise(0.05, 2500, 800, 0.08); thump(220, 0.06, 0.12); },
   };
   const last = {};
   function sfx(name, vol) {
@@ -92,53 +105,56 @@ const Snd = (() => {
   // ── engine ──
   function mkEngine() {
     const g = ac.createGain(); g.gain.value = 0; g.connect(engBus);
-    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 600; f.connect(g);
-    const o1 = ac.createOscillator(), o2 = ac.createOscillator(), og1 = ac.createGain(), og2 = ac.createGain();
-    o1.type = 'sawtooth'; o2.type = 'square'; og1.gain.value = 0.5; og2.gain.value = 0.3;
-    o1.connect(og1); og1.connect(f); o2.connect(og2); og2.connect(f);
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 400; f.Q.value = 0.6; f.connect(g);
+    const mk = (type, vol) => { const o = ac.createOscillator(), og = ac.createGain(); o.type = type; og.gain.value = vol; o.connect(og); og.connect(f); o.start(); return o; };
+    const o1 = mk('triangle', 0.6), o2 = mk('sine', 0.7), o3 = mk('sawtooth', 0.1);
     const ns = ac.createBufferSource(); ns.buffer = noiseBuf; ns.loop = true;
-    const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 800; nf.Q.value = 0.8;
+    const nf = ac.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 500; nf.Q.value = 0.7;
     const ng = ac.createGain(); ng.gain.value = 0; ns.connect(nf); nf.connect(ng); ng.connect(g);
-    const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 9; lg.gain.value = 0; lfo.connect(lg); lg.connect(o1.frequency);
-    o1.start(); o2.start(); ns.start(); lfo.start();
-    return {g, f, o1, o2, ng, nf, lg};
+    const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 9; lg.gain.value = 0; lfo.connect(lg); lg.connect(g.gain);
+    ns.start(); lfo.start();
+    return {g, f, o1, o2, o3, ng, nf, lg, lfo, gear: 0};
   }
 
+  // Pitch follows revs inside a gear, so it rises and drops back at each shift instead of whining ever higher.
   function engine(p) {
     if (!ac) return;
     if (!eng) eng = mkEngine();
     if (!p || muted) { eng.g.gain.setTargetAtTime(0, now(), 0.1); return; }
     const k = Math.min(1.3, Math.abs(p.speed) / Math.max(20, p.top));
-    let base, span, cut, noiseV = 0.04, lfo = 0, w1 = 'sawtooth';
+    let base, span, cut, noiseV = 0.03, gears = 5, vol = 1;
     switch (p.kind) {
-      case 'f1':    base = 110; span = 520; cut = 3000; w1 = 'sawtooth'; break;
-      case 'truck': base = 34; span = 110; cut = 520; lfo = 4; break;
-      case 'boat':  base = 38; span = 100; cut = 700; noiseV = 0.16; lfo = 6; break;
-      case 'plane': base = 150; span = 650; cut = 2600; noiseV = 0.22; break;
-      default:      base = 48; span = 210; cut = 1200;
+      case 'f1':    base = 95; span = 150; cut = 1500; gears = 7; vol = 0.85; break;
+      case 'truck': base = 30; span = 38; cut = 380; gears = 4; break;
+      case 'boat':  base = 36; span = 40; cut = 480; gears = 1; noiseV = 0.1; break;
+      case 'plane': base = 88; span = 70; cut = 900; gears = 1; noiseV = 0.14; vol = 0.8; break;
+      default:      base = 44; span = 62; cut = 620;
     }
-    const f = base + span * k * (p.boost ? 1.15 : 1), t = now();
-    eng.o1.type = w1;
-    eng.o1.frequency.setTargetAtTime(f, t, 0.06);
-    eng.o2.frequency.setTargetAtTime(f * 0.5, t, 0.06);
-    eng.f.frequency.setTargetAtTime(cut * (0.4 + k * 0.9) + (p.throttle ? 400 : 0), t, 0.08);
-    eng.lg.gain.setTargetAtTime(lfo * (1 + k * 3), t, 0.1);
-    eng.ng.gain.setTargetAtTime(noiseV * (0.4 + k) + (p.boost ? 0.12 : 0), t, 0.1);
-    eng.nf.frequency.setTargetAtTime(600 + k * 3500, t, 0.1);
-    eng.g.gain.setTargetAtTime(p.air ? 0.07 : 0.1 + 0.12 * (p.throttle ? 1 : 0.5) * Math.min(1, k * 1.5 + 0.2), t, 0.08);
+    const gk = Math.min(0.999, k / 1.05) * gears, gear = Math.floor(gk), rev = gears === 1 ? k : 0.35 + 0.65 * (gk - gear);
+    if (gear !== eng.gear) { if (gear > eng.gear && p.throttle && gears > 1) sfx('shift'); eng.gear = gear; }
+    const f = base + span * rev * (p.boost ? 1.1 : 1), t = now();
+    eng.o1.frequency.setTargetAtTime(f, t, 0.09);
+    eng.o2.frequency.setTargetAtTime(f * 0.5, t, 0.09);
+    eng.o3.frequency.setTargetAtTime(f * 2.01, t, 0.09);
+    eng.f.frequency.setTargetAtTime(cut * (0.55 + rev * 0.6) + (p.throttle ? cut * 0.25 : 0), t, 0.12);
+    eng.lfo.frequency.setTargetAtTime(f / 4, t, 0.1);
+    eng.lg.gain.setTargetAtTime(0.012, t, 0.1);
+    eng.ng.gain.setTargetAtTime(noiseV * (0.3 + k) + (p.boost ? 0.06 : 0), t, 0.1);
+    eng.nf.frequency.setTargetAtTime(300 + k * 1100, t, 0.1);
+    eng.g.gain.setTargetAtTime(vol * (p.air ? 0.05 : 0.055 + 0.075 * (p.throttle ? 1 : 0.45) * Math.min(1, k * 1.5 + 0.25)), t, 0.12);
   }
 
   function rival(dist, speed, top) {
     if (!ac) return;
     if (!riv) {
       riv = {o: ac.createOscillator(), g: ac.createGain(), f: ac.createBiquadFilter()};
-      riv.o.type = 'sawtooth'; riv.f.type = 'lowpass'; riv.f.frequency.value = 500; riv.g.gain.value = 0;
+      riv.o.type = 'triangle'; riv.f.type = 'lowpass'; riv.f.frequency.value = 420; riv.g.gain.value = 0;
       riv.o.connect(riv.f); riv.f.connect(riv.g); riv.g.connect(engBus); riv.o.start();
     }
     if (muted || dist == null) { riv.g.gain.setTargetAtTime(0, now(), 0.1); return; }
     const k = Math.min(1.3, Math.abs(speed) / Math.max(20, top));
-    riv.o.frequency.setTargetAtTime(44 + 200 * k, now(), 0.1);
-    riv.g.gain.setTargetAtTime(0.1 / (1 + dist / 18) ** 1.6, now(), 0.1);
+    riv.o.frequency.setTargetAtTime(44 + 70 * k, now(), 0.1);
+    riv.g.gain.setTargetAtTime(0.06 / (1 + dist / 18) ** 1.6, now(), 0.1);
   }
 
   // ── drive loops: wind, road, tyres ──
@@ -155,12 +171,12 @@ const Snd = (() => {
     const t = now();
     if (!p || muted) { for (const k in drv) drv[k].g.gain.setTargetAtTime(0, t, 0.1); return; }
     const k = Math.min(1.4, Math.abs(p.speed) / Math.max(20, p.top));
-    drv.wind.g.gain.setTargetAtTime(0.02 + 0.2 * k * k * (p.kind === 'plane' ? 1.4 : 1), t, 0.1);
+    drv.wind.g.gain.setTargetAtTime(0.01 + 0.11 * k * k * (p.kind === 'plane' ? 1.4 : 1), t, 0.1);
     drv.wind.f.frequency.setTargetAtTime(500 + k * 1800, t, 0.1);
     const onRoad = p.ground && (p.kind === 'car' || p.kind === 'f1' || p.kind === 'truck');
-    drv.road.g.gain.setTargetAtTime(onRoad ? 0.08 + 0.3 * k : 0, t, 0.08);
+    drv.road.g.gain.setTargetAtTime(onRoad ? 0.04 + 0.16 * k + (p.rough ? 0.1 : 0) : 0, t, 0.08);
     drv.road.f.frequency.setTargetAtTime(120 + k * 260 + (p.rough ? 200 : 0), t, 0.1);
-    drv.skid.g.gain.setTargetAtTime(onRoad ? Math.min(1, p.slip) * 0.22 : 0, t, 0.04);
+    drv.skid.g.gain.setTargetAtTime(onRoad ? Math.min(1, p.slip) * 0.12 : 0, t, 0.04);
     drv.skid.f.frequency.setTargetAtTime(2200 + k * 900, t, 0.1);
     drv.wash.g.gain.setTargetAtTime(p.kind === 'boat' && p.ground ? 0.05 + 0.28 * k : 0, t, 0.1);
     drv.wash.f.frequency.setTargetAtTime(500 + k * 1500, t, 0.1);
@@ -285,8 +301,11 @@ const Snd = (() => {
   function setMuted(m) {
     muted = m;
     try { localStorage.setItem('ct_mute', m ? '1' : '0'); } catch (e) {}
-    if (ac) master.gain.setTargetAtTime(m ? 0 : 0.8, now(), 0.05);
+    if (ac) master.gain.setTargetAtTime(m || hushed ? 0 : 0.8, now(), 0.05);
   }
 
-  return {init, sfx, engine, rival, drive, setTrack, setMuted, toggle() { setMuted(!muted); return muted; }, get muted() { return muted; }};
+  let hushed = false;
+  function hush(h) { hushed = h; if (ac) master.gain.setTargetAtTime(h || muted ? 0 : 0.8, now(), 0.05); }
+
+  return {hush, init, sfx, engine, rival, drive, setTrack, setMuted, toggle() { setMuted(!muted); return muted; }, get muted() { return muted; }};
 })();

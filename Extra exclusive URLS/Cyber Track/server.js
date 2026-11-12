@@ -376,6 +376,19 @@ function npcInput(car, L, dt) {
   }
 }
 
+function respawn(L, car) {
+  const tr = L.tr;
+  let f = car.safeF;
+  if (tr.mode === 'plane') { const o = CT.sample(tr, car.x, car.y, car.z, -1, {}); f = Math.max(8, Math.floor(o.i / 8) * 8) / tr.N; }
+  else if (f === undefined) { const o = CT.sample(tr, car.x, car.y, car.z, -1, {}); f = (o.i + o.t) / tr.N; }
+  const p = CT.placeAt(tr, f, 0);
+  car.x = p.x; car.z = p.z; car.y = p.y + (tr.mode === 'car' ? 0.5 : 0); car.angle = p.angle;
+  car.vy = 0; car.speed = 0; car.pit = 0; car.gy = null; car.fell = false; car.off = false; car.wi = p.i; car.lat = 0;
+  car.respT = 1000;
+  if (L.alive.size > 1) car.hp -= 10;
+  io.to(L.id).emit('respawn', {id: car.id, x: r2(car.x), y: r2(car.y), z: r2(car.z), a: r2(car.angle)});
+}
+
 function recenter(L, car, dmg) {
   const tr = L.tr, o = CT.sample(tr, car.x, car.y, car.z, car.wi, {});
   const p = CT.placeAt(tr, (o.i + o.t) / tr.N, 0);
@@ -687,8 +700,16 @@ function tickLobby(L) {
       if (!car.isNPC && car.inv.boost === 0) { car.rc = (car.rc || 0) + dt * 1000; if (car.rc >= 10000) { car.rc = 0; car.inv.boost = 1; } } else car.rc = 0;
       if (car.isNPC) npcInput(car, L, dt); else car.k = 1;
       if (car.jugT > 0) car.k *= 1.12;
+      if (car.respT > 0) { car.respT -= dt * 1000; continue; }
+      car.noBreak = car.isNPC;
       CT.stepCar(car, car.inp, dt, tr, env);
-      if (car.fell) recenter(L, car, 20);
+      if (car.broke) {
+        const k = car.broke - 1; car.broke = 0;
+        if (L.alive.size > 1 && !car.shieldOn) car.hp -= 12;
+        io.to(L.id).emit('rail', {i: k >> 1, sg: k & 1 ? 1 : -1, id: car.id});
+      }
+      if (tr.mode !== 'plane' && car.onGround && !car.off && Math.abs(car.lat) < L.w / 2 - 2) car.safeF = (car.wi + 0.5) / tr.N;
+      if (car.fell) { respawn(L, car); continue; }
       checkWalls(L, car);
       checkZones(L, car, dt);
       checkObstacles(L, car, dt);

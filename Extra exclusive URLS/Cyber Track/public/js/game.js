@@ -3,8 +3,10 @@
 // PERSISTENT STATE
 // ═══════════════════════════════════════════════════════════════════════
 let wins = parseInt(localStorage.getItem('ct_wins') || '0') || 0;
+const SPLIT = (() => { const q = new URLSearchParams(location.search), sp = +q.get('sp'); return sp ? {p: sp, dev: q.get('dev') || 'kb', room: q.get('room') || 'LOCAL', n: 0} : null; })();
+const CUSTOM_KEY = SPLIT && SPLIT.p === 2 ? 'ct_custom_p2' : 'ct_custom';
 let custom;
-try { custom = JSON.parse(localStorage.getItem('ct_custom') || 'null') || {}; }
+try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || localStorage.getItem('ct_custom') || 'null') || {}; }
 catch (e) { custom = {}; }
 
 function ensureCustomDefaults() {
@@ -26,7 +28,7 @@ function ensureCustomDefaults() {
   if (!PLANE_MODELS.find(m => m.id === custom.planeModel)) custom.planeModel = 'stunt';
 }
 ensureCustomDefaults();
-function saveCustom() { localStorage.setItem('ct_custom', JSON.stringify(custom)); }
+function saveCustom() { localStorage.setItem(CUSTOM_KEY, JSON.stringify(custom)); }
 
 // ═══════════════════════════════════════════════════════════════════════
 // GLOBAL STATE
@@ -545,7 +547,8 @@ function buildGarageUI() {
   const btnRow = $('garage-btn-row');
   if (garageMode === 'boat') btnRow.innerHTML = `<button class="btn-big btn-bot" onclick="selectedTrackType=2;openTrackSelect('bot')">BOT WATER RACE ▶</button><button class="btn-big" onclick="selectedTrackType=2;openTrackSelect('race')">RACE ON WATER ▶</button>`;
   else if (garageMode === 'plane') btnRow.innerHTML = `<button class="btn-big btn-bot" onclick="selectedTrackType=9;openTrackSelect('bot')">BOT SKY RACE ▶</button><button class="btn-big" onclick="selectedTrackType=9;openTrackSelect('race')">FLY THE SKY ▶</button>`;
-  else btnRow.innerHTML = `<button class="btn-big btn-bot" onclick="openTrackSelect('bot')">BOT RACE ▶</button><button class="btn-big" onclick="openTrackSelect('race')">START RACE ▶</button><button class="btn-big btn-friends" onclick="openFriendsPopup()">RACE WITH FRIENDS</button>`;
+  else btnRow.innerHTML = `<button class="btn-big btn-bot" onclick="openTrackSelect('bot')">BOT RACE ▶</button><button class="btn-big" onclick="openTrackSelect('race')">START RACE ▶</button><button class="btn-big btn-friends" onclick="openFriendsPopup()">RACE WITH FRIENDS</button><button class="btn-big btn-two" onclick="openSplitSetup()">2 PLAYERS</button>`;
+  if (SPLIT) splitGarageUI();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -575,13 +578,13 @@ function setupInput() {
     const racing = gamePhase === 'race' || gamePhase === 'spectate';
     if (set(e, true) && racing) e.preventDefault();
     if (gamePhase === 'race' && !pauseOpen) {
-      const item = e.code === 'Space' ? 'boost' : (e.code === 'ShiftLeft' || e.code === 'ShiftRight') ? 'missile' : (e.code === 'Enter' || e.code === 'NumpadEnter') ? 'shield' : e.code === 'KeyE' ? 'spring' : null;
+      const item = e.code === 'Space' ? 'boost' : (e.code === 'ShiftLeft' || e.code === 'ShiftRight') ? 'missile' : (e.code === 'Enter' || e.code === 'NumpadEnter') ? 'shield' : e.code === 'Backspace' ? 'spring' : null;
       if (item) { if (!e.repeat) useItem(item); e.preventDefault(); }
       if (!e.repeat && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) voteSlot(+e.code.slice(5) - 1);
     }
     if ((e.code === 'BracketLeft' || e.code === 'BracketRight' || e.code === 'Tab') && gamePhase === 'spectate') {
       e.preventDefault();
-      cycleSpecTarget(e.code === 'BracketLeft' ? -1 : 1);
+      cycleSpecTarget(e.code === 'BracketRight' ? -1 : 1);
     }
   });
   document.addEventListener('keyup', e => set(e, false));
@@ -610,7 +613,7 @@ function sendInput(inp) {
 }
 
 function cycleSpecTarget(dir) {
-  const alive = Object.keys(cars).filter(id => !cars[id].dead);
+  const alive = Object.keys(cars).filter(id => !cars[id].dead).sort((a, b) => (cars[a].pos || 99) - (cars[b].pos || 99));
   if (!alive.length) return;
   const cur = alive.indexOf(specTarget);
   specTarget = alive[((cur + dir) + alive.length) % alive.length];
@@ -690,10 +693,17 @@ function surface(c) {
     CT.rampAt(tr, o.s, _rp);
     CT.nrampAt(tr, o.s, o.lat, _nrp);
     const rel = c.angle - o.ang, ca = Math.cos(rel), sa = Math.sin(rel), rs = o.sl + _rp.sl + _nrp.sl;
-    c.gyv = o.cy + o.lat * o.bk + _rp.h + _nrp.h;
-    c.tsl = ca * rs + sa * o.bk;
-    c.trl = -sa * rs + ca * o.bk;
-    c.offRoad = Math.abs(o.lat) > tr.w / 2 + 0.6;
+    const half = tr.w / 2, a = Math.abs(o.lat);
+    if (a <= half + CT.RAIL_T) {
+      c.gyv = o.cy + clampN(o.lat, -half, half) * o.bk + (a > half ? 0 : _rp.h) + _nrp.h;
+      c.tsl = ca * rs + sa * o.bk;
+      c.trl = -sa * rs + ca * o.bk;
+      c.offRoad = false;
+    } else if (CT.GROUND[tr.style]) {
+      c.gyv = CT.offY(o, Math.sign(o.lat), a, half);
+      c.tsl = ca * o.sl; c.trl = -sa * o.sl;
+      c.offRoad = false;
+    } else { c.gyv = -1e6; c.tsl = c.trl = 0; c.offRoad = true; }
   } else { c.gyv = -1e6; c.tsl = Math.tan(c.pit); c.trl = 0; c.offRoad = true; }
 }
 
@@ -803,8 +813,10 @@ function carFx(c, dt) {
 // RACE LOOP
 // ═══════════════════════════════════════════════════════════════════════
 let _wallWas = false, _wasAir = false, _wasThr = false, _lastRivalD = 1e9, _wallSnd = 0, _wasBoost = false, _wasDrift = false;
+let respawnT = 0;
 function stepMe(inp, dt) {
   if (!me || gamePhase !== 'race') return;
+  if (performance.now() < respawnT) return;
   const wasGround = me.onGround, n = Math.max(1, Math.ceil(dt / 0.026));
   for (let i = 0; i < n; i++) {
     env.t = raceT;
@@ -824,7 +836,9 @@ function stepMe(inp, dt) {
   }
   if (!me.wallHit) _wallWas = false;
   me.fell = false;
+  if (me.broke) { me.broke = 0; buildRails(); Snd.sfx('railbreak'); shakeT = Math.max(shakeT, 0.35); dmgFlashT = Math.max(dmgFlashT, 0.3); }
   if (boostAbilityCooldown > 0) boostAbilityCooldown -= dt * 1000;
+  applyFix(dt);
   const rec = cars[myCarId];
   if (rec) {
     rec.x = me.x; rec.y = me.y; rec.z = me.z; rec.angle = me.angle; rec.speed = me.speed; rec.vy = me.vy; rec.pit = me.pit;
@@ -833,18 +847,25 @@ function stepMe(inp, dt) {
   }
 }
 
+const _fix = {x: 0, y: 0, z: 0, a: 0, s: 0};
+function applyFix(dt) {
+  const k = Math.min(1, dt * 20);
+  for (const [f, p] of [['x', 'x'], ['y', 'y'], ['z', 'z'], ['a', 'angle'], ['s', 'speed']]) { const d = _fix[f] * k; me[p] += d; _fix[f] -= d; }
+}
+
 function reconcile(sv) {
   if (!me) return;
   const dx = sv.x - me.x, dy = sv.y - me.y, dz = sv.z - me.z, d = Math.hypot(dx, dz);
   if (d > 7 || Math.abs(dy) > 9) {
     me.x = sv.x; me.y = sv.y; me.z = sv.z; me.angle = sv.a; me.vy = sv.vy; me.speed = sv.s; me.pit = sv.pit;
     me.onGround = !!sv.g; me.gy = null; me.wi = -1;
+    _fix.x = _fix.y = _fix.z = _fix.a = _fix.s = 0;
   } else {
-    if (d > 0.4) { me.x += dx * 0.2; me.z += dz * 0.2; }
-    if (W.tr.mode === 'plane' || !(sv.g && me.onGround)) { if (Math.abs(dy) > 0.5) me.y += dy * 0.15; }
+    _fix.x = d > 0.4 ? dx * 0.2 : 0; _fix.z = d > 0.4 ? dz * 0.2 : 0;
+    _fix.y = (W.tr.mode === 'plane' || !(sv.g && me.onGround)) && Math.abs(dy) > 0.5 ? dy * 0.15 : 0;
     const da = wrapA(sv.a - me.angle);
-    if (Math.abs(da) > 0.06) me.angle += da * 0.12;
-    me.speed = me.speed * 0.7 + sv.s * 0.3;
+    _fix.a = Math.abs(da) > 0.06 ? da * 0.12 : 0;
+    _fix.s = (sv.s - me.speed) * 0.3;
   }
   me.boostT = Math.max(sv.bT, boostAbilityCooldown > BOOST_ABILITY_CD ? boostAbilityCooldown - BOOST_ABILITY_CD : 0);
   me.oilT = sv.oT; me.slowT = sv.sT; me.spinT = sv.spT; me.reverseT = sv.rT; me.slip = !!sv.sl;
@@ -931,7 +952,7 @@ function updateSound() {
   Snd.engine({speed: sc.speed, top: sc.mine && me ? me.vs.top : 50, kind, boost, throttle: sc.mine ? K.u : true, air: mode !== 'plane' && sc.y - sc.gyv > 0.6});
   const air = mode !== 'plane' && sc.y - sc.gyv > 0.6, spd = Math.abs(sc.speed), topS = sc.mine && me ? me.vs.top : 50;
   const slip = sc.mine && mode === 'car' && !air ? Math.min(1, (sc.driftT > 250 ? 0.7 : 0) + Math.abs(sc.st) * spd / topS * 0.5 * (spd > 18 ? 1 : 0)) : 0;
-  Snd.drive({speed: sc.speed, top: topS, kind, ground: !air, slip, rough: sc.offRoad});
+  Snd.drive({speed: sc.speed, top: topS, kind, ground: !air, slip, rough: !!(sc.mine && me && me.off)});
   if (air && !_wasAir && spd > 15 && sc.mine) Snd.sfx(mode === 'boat' ? 'launch' : 'launch');
   if (!air && _wasAir && mode === 'boat' && sc.mine) Snd.sfx('splash');
   _wasAir = air;
@@ -988,7 +1009,7 @@ function frame(ts) {
   requestAnimationFrame(frame);
   const dt = Math.min((ts - _last) / 1000, 0.1);
   _last = ts;
-  if (dt <= 0) return;
+  if (dt <= 0 || splitActive) return;
   pollGamepad(dt);
   if (simPaused) { Snd.engine(null); Snd.rival(null); Snd.drive(null); renderer.render(raceScene, raceCam); return; }
   if (gamePhase === 'race' || gamePhase === 'spectate' || gamePhase === 'over') updateRace(dt, ts);
@@ -1159,6 +1180,25 @@ function applyTrack(st, first) {
 function setupSocket(s) {
   setupVoiceSocket(s);
   s.on('paused', ({on}) => setSimPaused(on));
+  s.on('rail', ({i, sg, id}) => {
+    if (!W.tr) return;
+    CT.breakRail(W.tr, i, sg); buildRails();
+    const c = carAt(id);
+    if (c) { for (let k = 0; k < 14; k++) spark(c.x, c.y + 0.6, c.z, (Math.random() - 0.5) * 16, 2 + Math.random() * 8, (Math.random() - 0.5) * 16, 1, 0.8, 0.4, 0.9, 0.5, 20); if (id !== myCarId && raceCam.position.distanceTo(c.mesh.position) < 80) Snd.sfx('railbreak'); }
+  });
+  s.on('respawn', ({id, x, y, z, a}) => {
+    const c = carAt(id);
+    if (!c) return;
+    c.x = x; c.y = y; c.z = z; c.angle = a; c.wi = -1;
+    if (c.sv) { c.sv.x = x; c.sv.y = y; c.sv.z = z; c.sv.a = a; c.sv.s = 0; }
+    if (id === myCarId && me) {
+      Object.assign(me, {x, y, z, angle: a, vy: 0, speed: 0, gy: null, wi: -1, lat: 0, off: false, onGround: W.tr.mode !== 'plane'});
+      _fix.x = _fix.y = _fix.z = _fix.a = _fix.s = 0;
+      respawnT = performance.now() + 1000; camInit = false;
+      const f = $('cutscene-fade'); f.style.transition = 'none'; f.style.opacity = 1;
+      setTimeout(() => { f.style.transition = 'opacity .25s'; f.style.opacity = 0; }, 1000);
+    }
+  });
   s.on('lobby_tick', ({remain}) => { if (gamePhase === 'lobby') startLobbyTimer(remain); });
   s.on('lobby_update', ({count, max, players}) => updateLobbyPlayers(players, count, max));
 
@@ -1168,7 +1208,7 @@ function setupSocket(s) {
     $('lobby-title').textContent = 'PRIVATE LOBBY — CODE: ' + code;
   });
 
-  s.on('join_error', ({msg}) => { alert(msg); _fp_showPanel('fp-main'); dropSocket(); });
+  s.on('join_error', ({msg}) => { if (SPLIT) return splitJoinRetry(); alert(msg); _fp_showPanel('fp-main'); dropSocket(); });
 
   s.on('joined', ({carId, trackName, remain}) => {
     myCarId = carId;

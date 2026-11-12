@@ -232,3 +232,14 @@ button{font-family:var(--f);}
 .pad-focus{outline:2px solid #ffe14a!important;outline-offset:2px;box-shadow:0 0 14px rgba(255,225,74,.6)!important;}
 .vote-btn.pad-focus{transform:translateY(-2px);}
 @media (max-width:700px){.inv-slot{width:56px;}.inv-name{display:none;}.hud-inv{bottom:8px;}}
+.btn-big.btn-two{background:linear-gradient(180deg,#ffe14a,#d49a00);color:#1a1200;box-shadow:0 5px 0 #6a4a00,0 8px 22px rgba(255,200,0,.3);}
+#split-list{gap:8px!important;}
+#split-view{position:fixed;inset:0;z-index:90;background:#000;display:flex;}
+#split-view iframe{flex:1 1 50%;width:50%;height:100%;border:0;border-right:2px solid #00ffcc55;}
+#split-view iframe:last-of-type{border-right:0;}
+#split-exit{position:absolute;left:50%;top:6px;transform:translateX(-50%);z-index:2;font-size:9px;padding:5px 10px;}
+.inv-slot{pointer-events:auto;cursor:pointer;}
+body.split .hud-return-btn,body.split #minimap{display:none;}
+body.split .hud-inv{gap:5px;}
+body.split .inv-slot{width:58px;}
+body.split .controls-hint{display:none;}

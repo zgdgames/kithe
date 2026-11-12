@@ -13,7 +13,7 @@ function padConnected() {
   return false;
 }
 function setDevice(d) {
-  if (inputDev === d) return;
+  if (inputDev === d || SPLIT) return;
   inputDev = d;
   document.body.classList.toggle('dev-pad', d === 'pad');
   if (d !== 'pad') clearPadFocus();
@@ -24,7 +24,7 @@ const ITEMS = [
   {k: 'boost',   ico: '⚡', name: 'BOOST',   col: '#00ffcc', kb: 'SPACE', pad: 'A'},
   {k: 'shield',  ico: '🛡', name: 'SHIELD',  col: '#3399ff', kb: 'ENTER', pad: 'B'},
   {k: 'missile', ico: '🚀', name: 'MISSILE', col: '#ff5533', kb: 'SHIFT', pad: 'X'},
-  {k: 'spring',  ico: '🦘', name: 'SPRING',  col: '#ffe14a', kb: 'E',     pad: 'Y'},
+  {k: 'spring',  ico: '🦘', name: 'SPRING',  col: '#ffe14a', kb: 'BKSP',  pad: 'Y'},
 ];
 
 function updateHints() {
@@ -32,17 +32,17 @@ function updateHints() {
   const hint = $('controls-hint');
   if (hint) hint.textContent = pad
     ? `L STICK ${plane ? 'TURN' : 'STEER'}  ·  ZL ${plane ? 'CLIMB' : 'DRIVE'}  ·  ZR ${plane ? 'DIVE' : 'REVERSE'}  ·  A BOOST  ·  B SHIELD  ·  X MISSILE  ·  Y SPRING  ·  − CAMERA  ·  + PAUSE`
-    : `${plane ? 'W/S CLIMB / DIVE  ·  A/D TURN' : 'W/S or ↑↓ DRIVE  ·  A/D or ←→ STEER'}  ·  SPACE BOOST  ·  ENTER SHIELD  ·  SHIFT MISSILE  ·  E SPRING  ·  P CAMERA  ·  ESC PAUSE`;
+    : `${plane ? 'W/S CLIMB / DIVE  ·  A/D TURN' : 'W/S or ↑↓ DRIVE  ·  A/D or ←→ STEER'}  ·  SPACE BOOST  ·  ENTER SHIELD  ·  SHIFT MISSILE  ·  BACKSPACE SPRING  ·  P CAMERA  ·  ESC PAUSE`;
   const creds = $('home-creds');
   if (creds) creds.textContent = pad ? '[ CONTROLLER · A SELECT · B BACK · L / R SWAP · R STICK SCROLL ]' : '[ KEYBOARD · WASD or ARROWS · 30s VOTE INTERVALS · LAST CAR WINS ]';
   const sb = $('spectate-banner');
-  if (sb) sb.textContent = 'SPECTATING — YOU WERE ELIMINATED  ·  ' + (pad ? 'L / R CYCLE CAMERA' : '[ ] CYCLE CAMERA');
+  if (sb) sb.textContent = 'SPECTATING — YOU WERE ELIMINATED  ·  ' + (pad ? 'L NEXT PLACE DOWN  ·  R NEXT PLACE UP' : '[ NEXT PLACE DOWN  ·  ] NEXT PLACE UP');
   const ph = $('pause-hint');
   if (ph) ph.textContent = pad ? '+ RESUME  ·  A SELECT  ·  B BACK' : 'ESC RESUME';
   const sc = $('settings-controls');
   if (sc) sc.innerHTML = pad
     ? 'CONTROLLER<br>L STICK STEER · ZL DRIVE · ZR REVERSE<br>A BOOST · B SHIELD · X MISSILE · Y SPRING JUMP<br>R STICK PICK VOTE · R STICK CLICK CAST VOTE<br>− CAMERA · + PAUSE<br>MENUS: A SELECT · B BACK · L / R SWAP · ZL / ZR SWAP GARAGE · R STICK SCROLL'
-    : 'KEYBOARD<br>WASD / ARROWS DRIVE AND STEER<br>SPACE BOOST · ENTER SHIELD · SHIFT MISSILE · E SPRING JUMP<br>1 2 3 VOTE · P CAMERA · V MIC · M SOUND · ESC PAUSE';
+    : 'KEYBOARD<br>WASD / ARROWS DRIVE AND STEER<br>SPACE BOOST · ENTER SHIELD · SHIFT MISSILE · BACKSPACE SPRING JUMP<br>1 2 3 VOTE · P CAMERA · V MIC · M SOUND · ESC PAUSE';
   _invKey = '';
 }
 
@@ -107,6 +107,7 @@ window.togglePause = function () {
 };
 window.exitRace = function () { goToGarage(); };
 
+
 function escapeKey() {
   if (!$('settings-popup').classList.contains('hidden')) return closeSettings();
   if (gamePhase === 'race' || gamePhase === 'spectate') return togglePause();
@@ -147,7 +148,7 @@ function updateInvHUD() {
     let n = myInv[i], label = it.name, ico = it.ico;
     if (it.k === 'missile' && !n && myInv[4]) { n = myInv[4]; label = 'EMP'; ico = '📡'; }
     const on = it.k === 'shield' && sh;
-    h += `<div class="inv-slot${n ? ' has' : ''}${on ? ' on' : ''}" style="--ic:${it.col}"><div class="inv-n">${n}</div><div class="inv-ico">${ico}</div><div class="inv-name">${on ? 'ACTIVE' : label}</div><div class="inv-key">${inputDev === 'pad' ? it.pad : it.kb}</div>${it.k === 'boost' && rc ? `<div class="inv-rc" style="width:${rc}%"></div>` : ''}</div>`;
+    h += `<div class="inv-slot${n ? ' has' : ''}${on ? ' on' : ''}" data-k="${it.k}" style="--ic:${it.col}"><div class="inv-n">${n}</div><div class="inv-ico">${ico}</div><div class="inv-name">${on ? 'ACTIVE' : label}</div><div class="inv-key">${inputDev === 'pad' ? it.pad : it.kb}</div>${it.k === 'boost' && rc ? `<div class="inv-rc" style="width:${rc}%"></div>` : ''}</div>`;
   });
   box.innerHTML = h;
 }
@@ -258,8 +259,8 @@ function swapTab(root, dir) {
 
 function pollGamepad(dt) {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-  let pad = null;
-  for (const p of pads) if (p && p.connected) { pad = p; break; }
+  let pad = null, want = SPLIT ? (SPLIT.dev === 'kb' ? -1 : +SPLIT.dev.slice(3)) : 0, seen = 0;
+  for (const p of pads) if (p && p.connected) { if (seen++ === want) { pad = p; break; } }
   if (!pad) {
     if (padSteer || K.pu || K.pd) { padSteer = 0; K.pu = K.pd = false; inputDirty = true; }
     if (inputDev === 'pad') setDevice('kb');
@@ -288,8 +289,8 @@ function pollGamepad(dt) {
       if (hit(PB.X)) useItem('missile');
       if (hit(PB.Y)) useItem('spring');
     } else {
-      if (hit(PB.R)) cycleSpecTarget(1);
-      if (hit(PB.L)) cycleSpecTarget(-1);
+      if (hit(PB.L)) cycleSpecTarget(1);
+      if (hit(PB.R)) cycleSpecTarget(-1);
     }
     if (hit(PB.MINUS)) toggleFpv();
     if (voteOpen()) {
@@ -376,7 +377,7 @@ function voiceDrop(id) {
   voiceInd();
 }
 async function voiceStart() {
-  if (!settings.voice || voice.joined || !socket || isBotRace || typeof RTCPeerConnection === 'undefined') { voiceInd(); return; }
+  if (SPLIT || !settings.voice || voice.joined || !socket || isBotRace || typeof RTCPeerConnection === 'undefined') { voiceInd(); return; }
   voice.joined = true;
   const s = socket;
   if (settings.mic && !voice.stream) {
@@ -504,6 +505,7 @@ function vcmdStop() {
   vcmdState('');
 }
 async function vcmdSync() {
+  if (SPLIT) return;
   if (!settings.vcmd) { if (vcmd.on) vcmdStop(); return; }
   if (vcmd.on) return;
   vcmd.on = true; vcmd.seen = 0;
@@ -536,3 +538,114 @@ window.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('pointerdown', firstGesture);
   document.addEventListener('keydown', firstGesture);
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+// ITEM SLOT CLICKS
+// ═══════════════════════════════════════════════════════════════════════
+document.addEventListener('pointerdown', e => {
+  const slot = e.target.closest && e.target.closest('.inv-slot');
+  if (slot && slot.dataset.k) { e.preventDefault(); useItem(slot.dataset.k); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 2 PLAYERS — two game views side by side, each with its own controls
+// ═══════════════════════════════════════════════════════════════════════
+let splitActive = false;
+const SPLIT_DEVS = [{id: 'kb', label: 'KEYBOARD'}, {id: 'pad0', label: 'CONTROLLER 1'}, {id: 'pad1', label: 'CONTROLLER 2'}];
+const splitPick = ['kb', 'pad0'];
+let splitFrames = [];
+
+function buildSplitSetup() {
+  const list = $('split-list');
+  list.innerHTML = '';
+  [0, 1].forEach(p => {
+    const d = SPLIT_DEVS.find(x => x.id === splitPick[p]);
+    const b = el('button', 'set-row', `<span><div class="set-name">PLAYER ${p + 1}</div><div class="set-desc">${p ? 'Right side of the screen' : 'Left side of the screen'}</div></span><span class="set-val on">${d.label}</span>`);
+    b.onclick = () => {
+      let i = SPLIT_DEVS.indexOf(d);
+      do { i = (i + 1) % SPLIT_DEVS.length; } while (SPLIT_DEVS[i].id === splitPick[1 - p]);
+      splitPick[p] = SPLIT_DEVS[i].id;
+      buildSplitSetup();
+    };
+    list.appendChild(b);
+  });
+  let n = 0;
+  for (const g of (navigator.getGamepads ? navigator.getGamepads() : [])) if (g && g.connected) n++;
+  $('split-note').textContent = `${n} CONTROLLER${n === 1 ? '' : 'S'} DETECTED  ·  PRESS A BUTTON ON A CONTROLLER TO WAKE IT`;
+}
+window.openSplitSetup = function () { buildSplitSetup(); $('split-popup').classList.remove('hidden'); };
+window.closeSplitSetup = function () { $('split-popup').classList.add('hidden'); };
+window.startSplit = function () {
+  closeSplitSetup();
+  const room = 'L' + Math.random().toString(36).slice(2, 5).toUpperCase();
+  const view = $('split-view');
+  splitFrames = [0, 1].map(p => {
+    const f = document.createElement('iframe');
+    f.allow = 'gamepad; microphone; autoplay';
+    f.src = `/?sp=${p + 1}&dev=${splitPick[p]}&room=${room}`;
+    view.appendChild(f);
+    return f;
+  });
+  view.classList.remove('hidden');
+  splitActive = true;
+  Snd.hush(true);
+};
+window.closeSplit = function () {
+  for (const f of splitFrames) f.remove();
+  splitFrames = [];
+  $('split-view').classList.add('hidden');
+  splitActive = false;
+  Snd.hush(false);
+};
+// Keys typed anywhere go to whichever player is on the keyboard.
+window.splitKey = function (type, code, repeat) {
+  const i = splitPick.indexOf('kb');
+  if (i < 0 || !splitFrames[i]) return;
+  const doc = splitFrames[i].contentDocument;
+  if (doc) doc.dispatchEvent(new KeyboardEvent(type, {code, key: code, repeat, bubbles: true}));
+};
+for (const type of ['keydown', 'keyup']) {
+  document.addEventListener(type, e => {
+    if (!e.isTrusted) return;
+    if (splitActive) { e.stopImmediatePropagation(); e.preventDefault(); splitKey(type, e.code, e.repeat); }
+    else if (SPLIT) { e.stopImmediatePropagation(); e.preventDefault(); if (parent !== window && parent.splitKey) parent.splitKey(type, e.code, e.repeat); }
+  }, true);
+}
+
+// ── inside one of the two views ──
+function splitRoom() { return (SPLIT.room.slice(0, 4) + (SPLIT.n % 10)).toUpperCase(); }
+function splitName() { const n = playerName() || 'PLAYER'; return SPLIT.p === 1 ? n : (n.slice(0, 14) + ' 2'); }
+function splitGarageUI() {
+  $('garage-title-text').textContent = 'PLAYER ' + SPLIT.p;
+  $('garage-header-left').innerHTML = `<button class="btn-icon" onclick="parent.closeSplit()">✕ EXIT 2 PLAYERS</button>`;
+  $('garage-header-right').innerHTML = `<div class="wins-pill">${SPLIT.dev === 'kb' ? 'KEYBOARD' : 'CONTROLLER ' + (+SPLIT.dev.slice(3) + 1)}</div>`;
+  $('garage-btn-row').innerHTML = `<button class="btn-big" onclick="splitReady()">READY ▶</button>`;
+  if (SPLIT.p === 2) { const t = [...document.querySelectorAll('#garage-tabs .ctab')].find(b => b.textContent === 'TRACK'); if (t) t.remove(); }
+}
+window.splitReady = function () {
+  gamePhase = 'lobby'; isBotRace = false;
+  showScreen('lobby');
+  $('lobby-title').textContent = 'WAITING FOR PLAYER ' + (3 - SPLIT.p);
+  const base = {name: splitName(), vh: custom.vehicle, customData: custom};
+  if (SPLIT.p === 1) emitWhenReady('create_private', Object.assign(base, {mode: '10', code: splitRoom(), trackType: selectedTrackType >= 0 ? selectedTrackType : undefined}));
+  else emitWhenReady('join_private', Object.assign(base, {code: splitRoom()}));
+  if (SPLIT.p === 1) socket.on('lobby_update', ({count}) => { if (count >= 2 && gamePhase === 'lobby') socket.emit('private_start'); });
+};
+function splitJoinRetry() {
+  dropSocket();
+  setTimeout(() => { if (gamePhase === 'lobby') splitReady(); }, 700);
+}
+if (SPLIT) {
+  window.addEventListener('DOMContentLoaded', () => {
+    document.body.classList.add('split');
+    inputDev = SPLIT.dev === 'kb' ? 'kb' : 'pad';
+    document.body.classList.toggle('dev-pad', inputDev === 'pad');
+    if (SPLIT.p === 2) Snd.hush(true);
+    Snd.init();
+    const home = goToHome, garage = goToGarage;
+    window.goToGarage = window.returnToGarage = window.exitRace = function () { if (gamePhase === 'race' || gamePhase === 'spectate' || gamePhase === 'over') SPLIT.n++; garage(); };
+    window.goToHome = window.leaveLobby = window.goToGarage;
+    garage();
+    updateHints();
+  });
+}

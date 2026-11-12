@@ -9,6 +9,21 @@ const CAR_R = 2.4;
 const DS = 5;
 const DRIFT_MIN_SPD = 22;
 const TAU = Math.PI * 2;
+const RAIL_T = 0.8, RAIL_H = 1.3, BREAK_V = 13, OFF_W = 10;
+const GROUND = {farm:1, forest:1, beach:1, cave:1, volcano:1, desert:1, snow:1, moon:1, candy:1, stadium:1};
+
+// Height of the ground beside the road: eases from the road edge down to the shoulder.
+function offY(o, sg, a, half) {
+  const t = Math.min(1, (a - half - RAIL_T) / 2.5), edge = o.cy + sg * half * o.bk;
+  return edge + (o.cy - 0.5 - half * Math.abs(o.bk) - edge) * t * t * (3 - 2 * t);
+}
+
+// Breakable edge rails (car tracks). holes[i*2 + side] = 1 where the rail is gone.
+function railOpen(tr, i, sg) { return !!(tr.holes && tr.holes[i * 2 + (sg > 0 ? 1 : 0)]); }
+function breakRail(tr, i, sg) {
+  if (!tr.holes) tr.holes = new Uint8Array(tr.N * 2);
+  for (let k = -1; k <= 1; k++) tr.holes[((i + k + tr.N) % tr.N) * 2 + (sg > 0 ? 1 : 0)] = 1;
+}
 
 // ── VEHICLES ─────────────────────────────────────────────────────────
 const VEHICLES = {
@@ -223,7 +238,7 @@ function sample(tr, x, y, z, hint, o) {
   let ttx = tr.tx[i] + (tr.tx[j]-tr.tx[i])*t, ttz = tr.tz[i] + (tr.tz[j]-tr.tz[i])*t;
   const tl = Math.hypot(ttx, ttz) || 1; ttx /= tl; ttz /= tl;
   const qx = px[i] + (px[j]-px[i])*t, qz = pz[i] + (pz[j]-pz[i])*t;
-  o.i = i; o.t = t;
+  o.i = i; o.t = t; o.d = Math.sqrt(bd);
   o.tx = ttx; o.tz = ttz; o.lx = ttz; o.lz = -ttx;
   o.lat = (x-qx)*o.lx + (z-qz)*o.lz;
   o.cy = py[i] + (py[j]-py[i])*t;
@@ -265,7 +280,7 @@ function newCar(vehicleId) {
     x:0, y:0, z:0, vy:0, angle:0, speed:0, pit:0,
     onGround:true, gy:null, wi:-1, lat:0, sl:0, rl:0, ta:0, k:1, slip:false,
     boostT:0, oilT:0, slowT:0, spinT:0, reverseT:0, driftT:0, driftSide:0,
-    wallHit:false, landed:0, fell:false,
+    wallHit:false, landed:0, fell:false, off:false, broke:0,
   };
 }
 
@@ -280,6 +295,7 @@ function stepCar(c, inp, dt, tr, env) {
   const thr = ((inp.u ? 1 : 0) - (inp.d ? 1 : 0)) * rev;
   const st = (inp.st || 0) * rev;
   let top = vs.top * bm * (env.dbl ? 1.6 : 1) * (c.k || 1);
+  if (c.off) top *= 0.82;
   if (c.slowT > 0) top *= 0.45;
   if (c.oilT > 0) top *= 0.8;
   if (c.slip) top *= 1.08;
@@ -338,24 +354,39 @@ function stepCar(c, inp, dt, tr, env) {
     c.x += Math.sin(c.angle) * c.speed * cs * dt;
     c.z += Math.cos(c.angle) * c.speed * cs * dt;
 
-    const o = sample(tr, c.x, c.y, c.z, c.wi, _s);
-    const half = tr.w / 2;
+    let o = sample(tr, c.x, c.y, c.z, c.wi, _s);
+    if (o.d > Math.abs(o.lat) + 10) o = sample(tr, c.x, c.y, c.z, -1, _s);
+    const half = tr.w / 2, carMode = tr.mode === 'car';
     let lat = o.lat;
     const rel = c.angle - o.ang, ca = Math.cos(rel), sa = Math.sin(rel);
-    if (!env.noWalls) {
-      const lim = half - 1.3;
-      if (Math.abs(lat) > lim) {
-        const sg = lat > 0 ? 1 : -1, ov = lat - sg * lim;
-        c.x -= o.lx * ov; c.z -= o.lz * ov; lat = sg * lim;
-        c.wallHit = true;
-        if (c.speed * sa * sg > 0) {
-          c.speed *= Math.pow(0.12, dt * (0.15 + Math.abs(sa)));
-          if (ca > 0 && c.spinT <= 0) {
-            let r = rel; while (r > Math.PI) r -= TAU; while (r < -Math.PI) r += TAU;
-            c.angle -= Math.sign(r) * Math.min(Math.abs(r), 1.6 * dt);
-          }
+    const bounce = (sg, tgt, out) => {
+      const ov = lat - sg * tgt;
+      c.x -= o.lx * ov; c.z -= o.lz * ov; lat = sg * tgt;
+      c.wallHit = true;
+      if (c.speed * sa * sg * out > 0) {
+        c.speed *= Math.pow(0.12, dt * (0.15 + Math.abs(sa)));
+        if (ca > 0 && c.spinT <= 0 && out > 0) {
+          let r = rel; while (r > Math.PI) r -= TAU; while (r < -Math.PI) r += TAU;
+          c.angle -= Math.sign(r) * Math.min(Math.abs(r), 1.6 * dt);
         }
       }
+    };
+    c.off = false;
+    if (carMode) {
+      const a = Math.abs(lat), sg = lat > 0 ? 1 : -1, lim = half - 1.3, lim2 = half + RAIL_T + 1.3;
+      const edgeY = o.cy + sg * half * o.bk;
+      if (!env.noWalls && a > lim && a < lim2 && c.y < edgeY + RAIL_H - 0.15 && !railOpen(tr, o.i, sg)) {
+        const fromIn = c.wi < 0 || Math.abs(c.lat) <= half + RAIL_T / 2, out = fromIn ? 1 : -1;
+        if (c.speed * sa * sg * out > BREAK_V && !c.noBreak) {
+          breakRail(tr, o.i, sg);
+          c.broke = o.i * 2 + (sg > 0 ? 1 : 0) + 1;
+          c.speed *= 0.72;
+        } else bounce(sg, fromIn ? lim : lim2, out);
+      }
+      if (GROUND[tr.style] && Math.abs(lat) > half + OFF_W) { const w = c.wallHit; bounce(sg, half + OFF_W, 1); c.wallHit = w; }
+    } else if (!env.noWalls) {
+      const lim = half - 1.3;
+      if (Math.abs(lat) > lim) bounce(lat > 0 ? 1 : -1, lim, 1);
     }
     let roadY;
     if (tr.mode === 'boat') {
@@ -367,12 +398,19 @@ function stepCar(c, inp, dt, tr, env) {
       c.sl = (waveH(c.x + fx*2, c.z + fz*2, env.t) - waveH(c.x - fx*2, c.z - fz*2, env.t)) / 4 + ca * (_rp.sl + _nr.sl);
       c.rl = (waveH(c.x + fz*1.2, c.z - fx*1.2, env.t) - waveH(c.x - fz*1.2, c.z + fx*1.2, env.t)) / 2.4 - sa * (_rp.sl + _nr.sl);
     } else {
-      rampAt(tr, o.s, _rp);
-      nrampAt(tr, o.s, lat, _nr);
-      roadY = o.cy + lat * o.bk + _rp.h + _nr.h;
-      if (env.noWalls && Math.abs(lat) > half + 0.6) roadY = -1e9;
-      c.sl = ca * (o.sl + _rp.sl + _nr.sl) + sa * o.bk;
-      c.rl = -sa * (o.sl + _rp.sl + _nr.sl) + ca * o.bk;
+      const a = Math.abs(lat), sg = lat > 0 ? 1 : -1;
+      if (a <= half + RAIL_T) {
+        rampAt(tr, o.s, _rp);
+        nrampAt(tr, o.s, lat, _nr);
+        if (a > half) _rp.h = _rp.sl = 0;
+        roadY = o.cy + Math.max(-half, Math.min(half, lat)) * o.bk + _rp.h + _nr.h;
+        c.sl = ca * (o.sl + _rp.sl + _nr.sl) + sa * o.bk;
+        c.rl = -sa * (o.sl + _rp.sl + _nr.sl) + ca * o.bk;
+      } else if (GROUND[tr.style]) {
+        roadY = offY(o, sg, a, half);
+        c.sl = ca * o.sl; c.rl = -sa * o.sl;
+        c.off = true;
+      } else { roadY = -1e9; c.sl = c.rl = 0; }
     }
     const G = GRAV * (env.lowG ? 0.28 : 1) * (tr.meta.g || 1);
     c.vy -= G * dt;
@@ -386,7 +424,7 @@ function stepCar(c, inp, dt, tr, env) {
       c.gy = null;
       if (c.y - roadY > 0.5) c.onGround = false;
     }
-    if (c.y < o.cy - 30) c.fell = true;
+    if (c.y < o.cy - (carMode ? 16 : 30)) c.fell = true;
     c.wi = o.i; c.lat = lat; c.ta = o.ang;
   }
 
@@ -397,5 +435,5 @@ function stepCar(c, inp, dt, tr, env) {
   if (c.reverseT > 0) c.reverseT -= ms;
 }
 
-return {GRAV, CAR_R, DS, DRIFT_MIN_SPD, VEHICLES, vstats, TRACKS, genTrack, buildTrack, rampAt, nrampAt, zoneRamps, sAtF, sample, placeAt, waveH, newCar, stepCar};
+return {offY, RAIL_T, RAIL_H, OFF_W, GROUND, railOpen, breakRail, GRAV, CAR_R, DS, DRIFT_MIN_SPD, VEHICLES, vstats, TRACKS, genTrack, buildTrack, rampAt, nrampAt, zoneRamps, sAtF, sample, placeAt, waveH, newCar, stepCar};
 });

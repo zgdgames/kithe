@@ -136,14 +136,14 @@ function initTextures() {
 
 // ── Strip geometry builder ───────────────────────────────────────────
 function Strips() { this.pos = []; this.uv = []; this.idx = []; }
-Strips.prototype.add = function (n, fa, fb, fv) {
+Strips.prototype.add = function (n, fa, fb, fv, skip) {
   const base = this.pos.length / 3;
   for (let i = 0; i <= n; i++) {
     const a = fa(i), b = fb(i), v = fv ? fv(i) : i;
     this.pos.push(a[0], a[1], a[2], b[0], b[1], b[2]);
     this.uv.push(0, v, 1, v);
   }
-  for (let i = 0; i < n; i++) { const p = base + i * 2; this.idx.push(p, p + 1, p + 2, p + 1, p + 3, p + 2); }
+  for (let i = 0; i < n; i++) { if (skip && skip(i)) continue; const p = base + i * 2; this.idx.push(p, p + 1, p + 2, p + 1, p + 3, p + 2); }
 };
 Strips.prototype.quad = function (a, b, c, d) {
   const p = this.pos.length / 3;
@@ -237,6 +237,28 @@ function setTrack(st) {
   return typeChanged;
 }
 
+// Edge rails, leaving gaps where they have been smashed through
+function buildRails() {
+  const tr = W.tr;
+  if (!tr || tr.mode !== 'car' || !W.wallMesh) return;
+  const N = tr.N, half = tr.w / 2, WH = CT.RAIL_H, WT = CT.RAIL_T, h = tr.holes;
+  const P = (lat, dy) => i => trackPt(tr, i, lat, dy);
+  const L = i => !!(h && h[(i % N) * 2 + 1]), R = i => !!(h && h[(i % N) * 2]);
+  const wall = new Strips(), rail = new Strips();
+  wall.add(N, P(half + WT, WH), P(half, WH), null, L);
+  wall.add(N, P(half, WH), P(half, 0), null, L);
+  wall.add(N, P(half + WT, 0), P(half + WT, WH), null, L);
+  wall.add(N, P(-half, 0), P(-half, WH), null, R);
+  wall.add(N, P(-half, WH), P(-half - WT, WH), null, R);
+  wall.add(N, P(-half - WT, WH), P(-half - WT, 0), null, R);
+  rail.add(N, P(half + 0.3, WH + 0.03), P(half + 0.02, WH + 0.03), null, L);
+  rail.add(N, P(-half - 0.02, WH + 0.03), P(-half - 0.3, WH + 0.03), null, R);
+  rail.add(N, P(half + WT + 0.02, WH * 0.6), P(half + WT + 0.02, WH * 0.85), null, L);
+  rail.add(N, P(-half - WT - 0.02, WH * 0.85), P(-half - WT - 0.02, WH * 0.6), null, R);
+  W.wallMesh.geometry.dispose(); W.wallMesh.geometry = wall.build();
+  W.railMesh.geometry.dispose(); W.railMesh.geometry = rail.build();
+}
+
 function buildTrackMeshes(tr, th) {
   const N = tr.N, half = tr.w / 2, G = W.group;
   const edgeMat = new THREE.MeshBasicMaterial({color: th.edge, fog: false});
@@ -253,23 +275,18 @@ function buildTrackMeshes(tr, th) {
     W.roadMat = new THREE.MeshStandardMaterial({map: TEX.road, emissiveMap: TEX.roadEm, emissive: th.edge, emissiveIntensity: th.night ? 1.2 : 0, color: th.road, roughness: 0.75, metalness: 0.1, envMap: ENV_MAP, envMapIntensity: 0.25});
     G.add(new THREE.Mesh(road.build(), W.roadMat));
 
-    const wall = new Strips(), deck = new Strips(), rail = new Strips();
-    wall.add(N, P(half + WT, WH), P(half, WH));
-    wall.add(N, P(half, WH), P(half, 0));
-    wall.add(N, P(-half, 0), P(-half, WH));
-    wall.add(N, P(-half, WH), P(-half - WT, WH));
+    const deck = new Strips();
     const nd = i => -dd(i);
-    deck.add(N, P(half + WT, nd), P(half + WT, WH));
-    deck.add(N, P(-half - WT, WH), P(-half - WT, nd));
+    deck.add(N, P(half + WT, nd), P(half + WT, 0));
+    deck.add(N, P(-half - WT, 0), P(-half - WT, nd));
     deck.add(N, P(-half - WT, nd), P(half + WT, nd));
-    rail.add(N, P(half + 0.3, WH + 0.03), P(half + 0.02, WH + 0.03));
-    rail.add(N, P(-half - 0.02, WH + 0.03), P(-half - 0.3, WH + 0.03));
-    rail.add(N, P(half + WT + 0.02, WH * 0.6), P(half + WT + 0.02, WH * 0.85));
-    rail.add(N, P(-half - WT - 0.02, WH * 0.85), P(-half - WT - 0.02, WH * 0.6));
-    W.wallMat = new THREE.MeshStandardMaterial({color: th.wall, roughness: 0.6, metalness: 0.3, transparent: true, opacity: 1});
-    W.wallMesh = new THREE.Mesh(wall.build(), W.wallMat);
-    W.railMesh = new THREE.Mesh(rail.build(), edgeMat);
+    deck.add(N, P(half + WT, 0), P(half, 0));
+    deck.add(N, P(-half, 0), P(-half - WT, 0));
+    W.wallMat = new THREE.MeshStandardMaterial({color: th.wall, roughness: 0.6, metalness: 0.3, transparent: true, opacity: 1, side: THREE.DoubleSide});
+    W.wallMesh = new THREE.Mesh(new THREE.BufferGeometry(), W.wallMat);
+    W.railMesh = new THREE.Mesh(new THREE.BufferGeometry(), edgeMat);
     G.add(W.wallMesh, W.railMesh);
+    buildRails();
     G.add(new THREE.Mesh(deck.build(), new THREE.MeshStandardMaterial({color: 0x14161e, roughness: 0.8, metalness: 0.3})));
 
   }

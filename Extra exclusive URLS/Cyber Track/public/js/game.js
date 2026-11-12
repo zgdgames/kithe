@@ -49,7 +49,7 @@ const BOOST_ABILITY_DUR = 2800, BOOST_ABILITY_CD = 8000;
 let gpCamYaw = 0, gpCamPitch = 0;
 
 let dmgFlashT = 0, boostGlowT = 0, shakeT = 0, glitchT = 0;
-let camYaw = 0, camInit = false;
+let camYaw = 0, camInit = false, fpvOn = false;
 const camPos = new THREE.Vector3(), camLook = new THREE.Vector3();
 
 let activePaintTarget = 'body';
@@ -563,6 +563,7 @@ function setupInput() {
   document.addEventListener('click', e => { if (e.target.closest && e.target.closest('button,.opt-btn,.ctab,.track-btn,.vh-slot,.paint-chip,.fp-key,.vote-btn')) Snd.sfx('click'); });
   document.addEventListener('keydown', e => {
     Snd.init();
+    if (e.code === 'KeyP' && !e.repeat && (gamePhase === 'race' || gamePhase === 'spectate')) { fpvOn = !fpvOn; camInit = false; flash(fpvOn ? '👁 FIRST PERSON' : '🎥 THIRD PERSON', '#00ffcc', 1200); }
     if (e.code === 'KeyM' && !e.repeat) flash(Snd.toggle() ? '🔇 SOUND OFF' : '🔊 SOUND ON', '#00ffcc', 1200);
     const racing = gamePhase === 'race' || gamePhase === 'spectate';
     if (set(e, true) && racing) e.preventDefault();
@@ -819,7 +820,7 @@ function carFx(c, dt) {
 // ═══════════════════════════════════════════════════════════════════════
 // RACE LOOP
 // ═══════════════════════════════════════════════════════════════════════
-let _wallSnd = 0, _wasBoost = false, _wasDrift = false;
+let _wallWas = false, _wasAir = false, _wasThr = false, _lastRivalD = 1e9, _wallSnd = 0, _wasBoost = false, _wasDrift = false;
 function stepMe(inp, dt) {
   if (!me || gamePhase !== 'race') return;
   const wasGround = me.onGround, n = Math.max(1, Math.ceil(dt / 0.026));
@@ -832,12 +833,14 @@ function stepMe(inp, dt) {
       for (let k = 0; k < 14; k++) spark(me.x + (Math.random() - 0.5) * 3, me.y + 0.2, me.z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 8, 1 + Math.random() * 3, (Math.random() - 0.5) * 8, 0.5, 0.5, 0.55, 2.4, 0.5, 4);
     }
     if (me.wallHit && Math.abs(me.speed) > 8) {
-      if (performance.now() - _wallSnd > 280) { _wallSnd = performance.now(); Snd.sfx('wall'); }
+      if (performance.now() - _wallSnd > 280) { _wallSnd = performance.now(); Snd.sfx(Math.abs(me.speed) > 30 && !_wallWas ? 'crash' : 'wall'); }
+      _wallWas = true;
       shakeT = Math.max(shakeT, 0.12);
       const sg = me.lat > 0 ? 1 : -1, lx = Math.cos(me.ta) * sg, lz = -Math.sin(me.ta) * sg;
       if (Math.random() < 0.6) spark(me.x + lx * 1.2, me.y + 0.6, me.z + lz * 1.2, -lx * 5 + (Math.random() - 0.5) * 6, 2 + Math.random() * 5, -lz * 5 + (Math.random() - 0.5) * 6, 1, 0.75, 0.3, 0.9, 0.4, 20);
     }
   }
+  if (!me.wallHit) _wallWas = false;
   me.fell = false;
   if (boostAbilityCooldown > 0) boostAbilityCooldown -= dt * 1000;
   const rec = cars[myCarId];
@@ -878,9 +881,33 @@ function updateRemote(c, dt) {
   c.st += (sv.st - c.st) * k;
 }
 
+function fpvOffset(c) {
+  const vh = VEHICLES[c.vh] || {}, mode = W.tr.mode;
+  if (mode === 'plane') return c.custom && c.custom.planeModel === 'fighter' ? [0, 0.62, 1.7] : [0, 0.72, 1.3];
+  if (mode === 'boat') return [0, 1.55, 0.5];
+  if (vh.type === 'f1') return [0, 1.02, 0.1];
+  if (vh.type === 'truck') return [0, 2.05, 0.1];
+  const S = CAR_SPECS[c.vh] || CAR_SPECS.civic_type_r;
+  return [0, (S.belt + S.roof) / 2 + 0.06, (S.cabR + S.cabF) / 2 + 0.25];
+}
+const _qFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+
 function updateCamera(dt) {
   const id = gamePhase === 'race' ? myCarId : specTarget, c = cars[id];
   if (!c) return;
+  if (fpvOn && c.mesh) {
+    const o = fpvOffset(c);
+    c.mesh.updateMatrixWorld(true);
+    _F.set(o[0], o[1], o[2]); c.mesh.localToWorld(_F);
+    raceCam.position.copy(_F);
+    if (shakeT > 0) { shakeT -= dt; const a = shakeT * 0.8; raceCam.position.x += (Math.random() - 0.5) * a; raceCam.position.y += (Math.random() - 0.5) * a; raceCam.position.z += (Math.random() - 0.5) * a; }
+    raceCam.quaternion.copy(c.mesh.quaternion).multiply(_qFlip);
+    const top0 = c.mine && me ? me.vs.top : 50, fov0 = 78 + Math.min(1.6, Math.abs(c.speed) / top0) * 14 + (c.boostT > 0 ? 8 : 0);
+    if (Math.abs(raceCam.fov - fov0) > 0.05) { raceCam.fov += (fov0 - raceCam.fov) * Math.min(1, dt * 4); raceCam.updateProjectionMatrix(); }
+    W.head.position.set(c.x, c.y + 2.2, c.z);
+    W.head.target.position.set(c.x + Math.sin(c.angle) * 30, c.y + c.vsl * 30, c.z + Math.cos(c.angle) * 30);
+    return;
+  }
   const tr = W.tr, plane = tr.mode === 'plane', cave = tr.style === 'cave';
   const spinning = c.mine && me && me.spinT > 0;
   if (!camInit) { camYaw = c.angle; }
@@ -920,6 +947,15 @@ function updateSound() {
   const kind = mode === 'boat' ? 'boat' : mode === 'plane' ? 'plane' : vt === 'f1' ? 'f1' : vt === 'truck' ? 'truck' : 'car';
   const boost = sc.boostT > 0;
   Snd.engine({speed: sc.speed, top: sc.mine && me ? me.vs.top : 50, kind, boost, throttle: sc.mine ? K.u : true, air: mode !== 'plane' && sc.y - sc.gyv > 0.6});
+  const air = mode !== 'plane' && sc.y - sc.gyv > 0.6, spd = Math.abs(sc.speed), topS = sc.mine && me ? me.vs.top : 50;
+  const slip = sc.mine && mode === 'car' && !air ? Math.min(1, (sc.driftT > 250 ? 0.7 : 0) + Math.abs(sc.st) * spd / topS * 0.5 * (spd > 18 ? 1 : 0)) : 0;
+  Snd.drive({speed: sc.speed, top: topS, kind, ground: !air, slip, rough: sc.offRoad});
+  if (air && !_wasAir && spd > 15 && sc.mine) Snd.sfx(mode === 'boat' ? 'launch' : 'launch');
+  if (!air && _wasAir && mode === 'boat' && sc.mine) Snd.sfx('splash');
+  _wasAir = air;
+  const thr = sc.mine ? K.u : true;
+  if (sc.mine && _wasThr && !thr && spd > topS * 0.6 && mode === 'car') Snd.sfx('pop');
+  _wasThr = thr;
   if (boost && !_wasBoost && sc.mine) Snd.sfx('boost');
   _wasBoost = boost;
   const drift = sc.mine && sc.driftT > 250 && mode === 'car';
@@ -928,6 +964,8 @@ function updateSound() {
   let bd = 1e9, bc = null;
   for (const o of Object.values(cars)) { if (o === sc || o.dead) continue; const d = Math.hypot(o.x - sc.x, o.y - sc.y, o.z - sc.z); if (d < bd) { bd = d; bc = o; } }
   if (bc && bd < 90) Snd.rival(bd, bc.speed, 50); else Snd.rival(null);
+  if (bd < 7 && _lastRivalD >= 7 && Math.abs(sc.speed - (bc ? bc.speed : 0)) > 6) Snd.sfx('pass');
+  _lastRivalD = bd;
 }
 
 function updateRace(dt, ts) {
@@ -945,6 +983,7 @@ function updateRace(dt, ts) {
     poseCar(c, dt);
     if (glitchT > 0) { c.mesh.position.x += (Math.random() - 0.5) * 0.5 * glitchT; c.mesh.position.z += (Math.random() - 0.5) * 0.5 * glitchT; c.mesh.rotateY((Math.random() - 0.5) * 0.08 * glitchT); }
     if (env.ghost) c.mesh.visible = Math.floor(ts / 60) % 2 === 0 || c.mine; else c.mesh.visible = true;
+    if (fpvOn && c.id === (gamePhase === 'race' ? myCarId : specTarget)) c.mesh.visible = false;
     carFx(c, dt);
   }
   if (glitchT > 0) glitchT -= dt;
@@ -970,7 +1009,7 @@ function frame(ts) {
   _last = ts;
   if (dt <= 0) return;
   if (gamePhase === 'race' || gamePhase === 'spectate' || gamePhase === 'over') updateRace(dt, ts);
-  else { updateGarage(dt, ts); Snd.engine(null); Snd.rival(null); }
+  else { updateGarage(dt, ts); Snd.engine(null); Snd.rival(null); Snd.drive(null); Snd.setTrack('menu'); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1141,8 +1180,9 @@ function applyTrack(st, first) {
   if (first || oldMode !== W.tr.mode) for (const c of Object.values(cars)) { buildCarMesh(c); c.vsl = c.vrl = 0; }
   for (const c of Object.values(cars)) c.wi = -1;
   if (me) { me.wi = -1; me.gy = null; }
+  Snd.setTrack(W.tr.style);
   const hint = $('controls-hint');
-  hint.textContent = W.tr.mode === 'plane' ? 'W/S or ↑↓ CLIMB / DIVE  ·  A/D or ←→ TURN  ·  SPACE BOOST' : 'W/S or ↑↓ DRIVE  ·  A/D or ←→ STEER  ·  SPACE BOOST';
+  hint.textContent = W.tr.mode === 'plane' ? 'W/S or ↑↓ CLIMB / DIVE  ·  A/D or ←→ TURN  ·  SPACE BOOST  ·  P CAMERA  ·  M SOUND' : 'W/S or ↑↓ DRIVE  ·  A/D or ←→ STEER  ·  SPACE BOOST  ·  P CAMERA  ·  M SOUND';
 }
 
 function setupSocket(s) {
@@ -1305,11 +1345,11 @@ function setupSocket(s) {
   });
   s.on('emp_fired', ({id}) => { const c = carAt(id); if (c) { if (id !== myCarId) Snd.sfx('emp'); explode(c.x, c.y, c.z, 0x4488ff, 40, 15); shockRing(c.x, c.y + 1, c.z, 0x4488ff, 26, true); } });
   s.on('near_miss', ({id}) => { if (id === myCarId) { Snd.sfx('nearmiss'); flash('✨ NEAR MISS +BOOST', '#ffff00', 1500); boostGlowT = 0.5; } });
-  s.on('bump', ({x, y, z}) => { if (raceCam.position.distanceToSquared(_F.set(x, y, z)) < 60 * 60) Snd.sfx('bump'); if (raceCam.position.distanceToSquared(_F.set(x, y, z)) < 120 * 120) for (let k = 0; k < 8; k++) spark(x, y, z, (Math.random() - 0.5) * 12, Math.random() * 7, (Math.random() - 0.5) * 12, 1, 0.8, 0.4, 0.9, 0.35, 20); });
+  s.on('bump', ({x, y, z}) => { if (raceCam.position.distanceToSquared(_F.set(x, y, z)) < 60 * 60) Snd.sfx('crash'); if (raceCam.position.distanceToSquared(_F.set(x, y, z)) < 120 * 120) for (let k = 0; k < 8; k++) spark(x, y, z, (Math.random() - 0.5) * 12, Math.random() * 7, (Math.random() - 0.5) * 12, 1, 0.8, 0.4, 0.9, 0.35, 20); });
   s.on('car_hit', ({id, type}) => {
     const c = carAt(id);
     if (!c) return;
-    if (type === 'missile') { explode(c.x, c.y, c.z, 0xff5500, 55, 18); Snd.sfx('explode'); }
+    if (type === 'missile') { explode(c.x, c.y, c.z, 0xff5500, 55, 18); Snd.sfx('explode'); Snd.sfx('crashbig'); }
     if (type === 'cryo') Snd.sfx('cryo'); if (type === 'lightning') Snd.sfx('lightning'); if (type === 'leech_gain') Snd.sfx('leech'); if (type === 'spring') Snd.sfx('spring'); if (type === 'shield_block') Snd.sfx('shield');
     if (type === 'emp') explode(c.x, c.y, c.z, 0x44ccff, 30, 10);
     if (type === 'spring') { explode(c.x, c.y, c.z, 0xffee44, 26, 12); shockRing(c.x, c.y + 0.3, c.z, 0xffee44, 7, true); if (id === myCarId && me) { me.vy = 24; me.onGround = false; me.gy = null; } }

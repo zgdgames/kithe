@@ -629,7 +629,7 @@ let shadowGeo = null, shadowMat = null, shieldGeo = null, shieldMat = null;
 function addCar(c) {
   const mine = c.id === myCarId, cu = mine ? custom : (c.custom || {});
   const rec = {
-    id: c.id, vh: c.vh, custom: cu, name: c.name, isNPC: c.isNPC, mine,
+    id: c.id, vh: c.vh, custom: cu, name: c.name, isNPC: c.isNPC, mine, sid: c.socketId,
     x: c.x, y: c.y, z: c.z, angle: c.angle, speed: 0, vy: 0, st: 0, pit: 0, onGround: true, wi: -1,
     hp: c.hp, maxHp: c.maxHp || c.hp, sv: null, dead: false,
     vsl: 0, vrl: 0, gyv: c.y, boostT: 0, driftT: 0, driftSide: 0, shield: false,

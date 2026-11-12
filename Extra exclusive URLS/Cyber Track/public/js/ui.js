@@ -74,7 +74,7 @@ function buildSettings() {
     b.onclick = () => { fn(); buildSettings(); };
     list.appendChild(b);
   };
-  row('VOICE CHAT', 'Hear other players in online races', settings.voice, () => { settings.voice = !settings.voice; if (!settings.voice) settings.mic = false; saveSettings(); voiceRestart(); });
+  row('VOICE CHAT', 'Hear nearby players in online races  ·  louder when closer', settings.voice, () => { settings.voice = !settings.voice; if (!settings.voice) settings.mic = false; saveSettings(); voiceRestart(); });
   row('MICROPHONE', 'Let other players hear you  ·  V in race', settings.mic, () => { settings.mic = !settings.mic; if (settings.mic) settings.voice = true; saveSettings(); voiceRestart(); });
   row('VOICE COMMANDS', 'Say BOOST, MISSILE, SHIELD or JUMP', settings.vcmd, () => { settings.vcmd = !settings.vcmd; saveSettings(); vcmdSync(); }, settings.vcmd ? (vcmd.state || 'ON') : 'OFF');
   row('SOUND', 'Music and sound effects', !Snd.muted, () => Snd.toggle());
@@ -346,10 +346,34 @@ function voiceInd() {
   if (voice.joined) {
     lines.push((voice.stream && settings.mic ? '🎙 MIC ON' : '🔇 MIC OFF') + (inputDev === 'pad' ? '' : '  ·  V'));
     const n = Object.keys(voice.pcs).length;
-    lines.push('🔊 ' + n + ' IN VOICE');
+    lines.push('🔊 ' + n + ' IN VOICE' + (n && (gamePhase === 'race' || gamePhase === 'spectate') ? '  ·  ' + (voice.near || 0) + ' IN RANGE' : ''));
   }
   if (vcmd.on) lines.push('🗣 ' + (vcmd.state || 'VOICE COMMANDS'));
   e.textContent = lines.join('\n');
+}
+
+// Voices fade with distance: full volume within 25 m, silent past 220 m. Lobbies are full volume.
+const VOICE_NEAR = 25, VOICE_FAR = 220;
+function voiceProximity() {
+  const racing = gamePhase === 'race' || gamePhase === 'spectate';
+  const ear = racing ? cars[gamePhase === 'race' ? myCarId : specTarget] : null;
+  let near = 0;
+  for (const id of Object.keys(voice.pcs)) {
+    const rec = voice.pcs[id];
+    let v = 1;
+    if (ear) {
+      const c = Object.values(cars).find(o => o.sid === id);
+      if (c) {
+        const d = Math.hypot(c.x - ear.x, c.y - ear.y, c.z - ear.z);
+        const k = clampN((VOICE_FAR - d) / (VOICE_FAR - VOICE_NEAR), 0, 1);
+        v = k * k;
+      }
+    }
+    rec.vol = v;
+    if (v > 0.02) near++;
+    if (rec.audio) rec.audio.volume += (v - rec.audio.volume) * 0.35;
+  }
+  voice.near = near;
 }
 
 function voiceSignal(to, data) { if (socket) socket.emit('voice_signal', {to, data}); }
@@ -534,6 +558,7 @@ window.addEventListener('DOMContentLoaded', () => {
   if (padConnected()) setDevice('pad');
   updateHints();
   setInterval(voiceInd, 500);
+  setInterval(voiceProximity, 100);
   const firstGesture = () => { document.removeEventListener('pointerdown', firstGesture); document.removeEventListener('keydown', firstGesture); vcmdSync(); };
   document.addEventListener('pointerdown', firstGesture);
   document.addEventListener('keydown', firstGesture);

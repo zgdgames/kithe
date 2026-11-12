@@ -10,8 +10,8 @@ android {
         applicationId = "com.kithe.browser"
         minSdk = 29
         targetSdk = 34
-        versionCode = 116
-        versionName = "0.1.16"
+        versionCode = 117
+        versionName = "0.1.17"
     }
 
     buildTypes {

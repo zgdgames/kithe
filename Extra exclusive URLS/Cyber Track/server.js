@@ -761,17 +761,48 @@ function resolveVote(L) {
   for (const car of L.cars.values())
     if (!car.eliminated && car.socketId) sidToPos[car.socketId] = car.position || 999;
 
-  // NPC votes weighted by personality
+  // NPC votes: each AI weighs the options by what they would do to itself
+  const alive = [...L.cars.values()].filter(c => !c.eliminated);
+  const nAlive = alive.length;
   for (const car of L.cars.values()) {
     if (!car.isNPC || car.eliminated) continue;
     const opts = L.voteOpts;
     if (!opts.length) continue;
-    const rand = () => opts[Math.floor(Math.random() * opts.length)];
-    let pick;
-    if (car.personality === 1) pick = opts.find(o => o.id.startsWith('elim') || o.id === 'storm' || o.id === 'gravity' || o.id === 'damage_all') || rand();
-    else if (car.personality === 2) pick = opts.find(o => o.id === 'repair_all' || o.id === 'boost' || o.id === 'widen') || rand();
-    else if (car.personality === 3) pick = rand();
-    else pick = opts.find(o => !o.id.startsWith('elim')) || opts[0];
+    const pos = car.position || nAlive, hp = car.hp !== undefined ? car.hp : 100;
+    const last = pos >= nAlive, bottom = pos > nAlive - 2, bottom3 = pos > nAlive - 3;
+    const lead = pos === 1, weak = hp <= 30, hurt = hp <= 60;
+    const dmgAll = o => o.id === 'damage_all' || o.id === 'mega_storm' || o.id === 'laser_gates' || o.id === 'lightning_field';
+    const hazard = o => ['spike','double_spike','mega_spike','shock_zone','full_hazard','boost_spike','storm','mega_storm','laser_gates','lightning_field','random_chaos','gravity','spin_out','maze_walls','moving_barriers','debris','fog_event','reverse_controls'].includes(o.id);
+    const score = o => {
+      let w = 1 + Math.random() * 0.6;
+      const id = o.id;
+      if (id === 'elim_last' && last) w -= 9;
+      if (id === 'elim_bottom2' && bottom) w -= 9;
+      if (id === 'elim_bottom3' && bottom3) w -= 9;
+      if (id === 'elim_random') w -= weak ? 4 : (last ? 2 : 0) - (lead ? 0 : 0);
+      if (id.startsWith('elim') && !(id === 'elim_last' && last) && !(id === 'elim_bottom2' && bottom) && !(id === 'elim_bottom3' && bottom3) && id !== 'elim_random') w += lead ? 2.5 : (pos <= nAlive / 2 ? 1.5 : 0.3);
+      if (id === 'elim_random' && lead) w += 0.5;
+      if (dmgAll(o)) w += weak ? -9 : hurt ? -3 : lead ? 0.6 : 0;
+      if (id === 'damage_all' && (weak || hp < 45)) w -= 6;
+      if (hazard(o) && weak) w -= 4;
+      if (hazard(o) && hurt) w -= 1.5;
+      if (id === 'repair_all' || id === 'boost_rain') w += weak ? 6 : hurt ? 3 : last ? 1.5 : 0;
+      if (id === 'repair_all' && hp > 90) w -= 0.5;
+      if (['boost','double_boost','flash_boost','speed_surge','wave_boost','double_speed','oil_boost','speed_all'].includes(id)) w += last ? 2 : lead ? -0.3 : 0.6;
+      if (['slow_field','freeze_all','freeze_zone','slow_npc'].includes(id)) w += lead ? 1.5 : last ? -1.5 : 0;
+      if (id === 'turbo_npc' && !lead) w += 0.8;
+      if (['oil','triple_oil'].includes(id)) w += lead ? 1 : last ? -1 : 0;
+      if (['widen','mega_widen','expand_track'].includes(id)) w += weak || hurt ? 1.2 : 0;
+      if (['narrow','mega_narrow','compress'].includes(id)) w += weak ? -2 : 0;
+      if (id === 'ghost_mode') w += weak ? 2 : 0;
+      if (id === 'no_walls') w += weak ? -1.5 : 0;
+      if (car.personality === 1) w += (id.startsWith('elim') || hazard(o)) && !weak ? 1.2 : 0;
+      else if (car.personality === 2) w += (id === 'repair_all' || id === 'boost' || id === 'widen') ? 1.5 : 0;
+      else if (car.personality === 3) w += Math.random() * 1.5;
+      return w;
+    };
+    let pick = opts[0], best = -Infinity;
+    for (const o of opts) { const sc = score(o); if (sc > best) { best = sc; pick = o; } }
     if (pick && counts[pick.id] !== undefined) counts[pick.id]++;
   }
 

@@ -268,13 +268,52 @@ function stickerMat(id) {
 
 function addSticker(group, id, w, len, x, y, z, pitch, yaw) {
   if (!id || id === 'none') return;
-  const g = new THREE.PlaneGeometry(w, len);
+  const g = new THREE.PlaneGeometry(w, len, 12, 12);
   let m;
   if (yaw) { m = new THREE.Mesh(g, stickerMat(id)); m.rotation.y = yaw; }
   else { g.rotateX(-Math.PI / 2); m = new THREE.Mesh(g, stickerMat(id)); m.rotation.x = pitch || 0; }
   m.position.set(x, y, z);
   m.renderOrder = 2;
+  m.userData.sticker = true;
   group.add(m);
+}
+
+const _stRay = new THREE.Raycaster(), _stV = new THREE.Vector3(), _stN = new THREE.Vector3(), _stD = new THREE.Vector3();
+function conformStickers(g, mats) {
+  const stickers = [], hosts = [];
+  g.traverse(o => {
+    if (!o.isMesh) return;
+    if (o.userData.sticker) stickers.push(o);
+    else if (o.material === mats.body || o.material === mats.trim || o.material === mats.bumper) hosts.push(o);
+  });
+  if (!stickers.length) return;
+  g.updateMatrixWorld(true);
+  for (const m of stickers) {
+    const geo = m.geometry, pos = geo.attributes.position, nor = geo.attributes.normal;
+    m.updateMatrix();
+    _stN.fromBufferAttribute(nor, 0).transformDirection(m.matrix).normalize();
+    const ok = new Array(pos.count).fill(false);
+    for (let i = 0; i < pos.count; i++) {
+      _stV.fromBufferAttribute(pos, i).applyMatrix4(m.matrix);
+      _stRay.set(_stD.copy(_stV).addScaledVector(_stN, 2.5), _stN.clone().negate());
+      _stRay.far = 5;
+      const hits = _stRay.intersectObjects(hosts, false);
+      let best = null;
+      for (const h of hits) if (!best || Math.abs(h.distance - 2.5) < Math.abs(best.distance - 2.5)) best = h;
+      if (best && Math.abs(best.distance - 2.5) < 0.45) {
+        const fn = best.face.normal.clone().transformDirection(best.object.matrixWorld);
+        _stV.copy(best.point).addScaledVector(fn, 0.012);
+        ok[i] = true;
+      }
+      pos.setXYZ(i, _stV.x, _stV.y, _stV.z);
+    }
+    const idx = geo.index.array, keep = [];
+    for (let t = 0; t < idx.length; t += 3) if (ok[idx[t]] && ok[idx[t + 1]] && ok[idx[t + 2]]) keep.push(idx[t], idx[t + 1], idx[t + 2]);
+    geo.setIndex(keep);
+    geo.computeVertexNormals();
+    m.position.set(0, 0, 0); m.rotation.set(0, 0, 0); m.updateMatrix();
+    if (!keep.length) m.visible = false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -327,6 +366,7 @@ const CAR_SPECS = {
 };
 
 function finishVehicle(g, kind, vhId, c, mats, extra) {
+  conformStickers(g, mats);
   g.userData = Object.assign({kind, vhId, paint: mats.body.color.getHex(), wheels: [], front: []}, extra);
   g.traverse(o => { if (o.userData && o.userData.spin) { g.userData.wheels.push(o.userData.spin); if (o.userData.front) g.userData.front.push(o); } });
   return g;

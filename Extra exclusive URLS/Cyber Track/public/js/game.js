@@ -363,9 +363,10 @@ function updateGarage(dt, ts) {
   else {
     garageAngle += dt * 0.28;
     const home = gamePhase !== 'garage';
-    const r = home ? 13 : 10.5, h = home ? 3.6 : 3.0;
+    const pl = garageMode === 'plane', bt = garageMode === 'boat';
+    const r = home ? 13 : pl ? 12.5 : 10.5, h = home ? 3.6 : pl ? 3.4 : 3.0;
     garageCam.position.set(Math.sin(garageAngle) * r, h + Math.sin(garageAngle * 0.5) * 0.4, Math.cos(garageAngle) * r * 0.9 - 1);
-    garageCam.lookAt(0, home ? 1.6 : -1.3, 0);
+    garageCam.lookAt(0, home ? 1.6 : pl ? 0.6 : bt ? -0.5 : -0.4, 0);
     garageCarMesh.rotation.y -= dt * 0.35;
     garageTable.rotation.y = garageCarMesh.rotation.y;
     if (garageMode !== 'car') garageCarMesh.position.y = (garageMode === 'plane' ? 2.2 : 0.55) + Math.sin(ts * 0.002) * 0.12;

@@ -460,6 +460,14 @@ function _buildTrimsPane(pane) {
     b.onclick = () => { t[o.id] = !on; applyCustom(); };
     pane.appendChild(b);
   };
+  pane.appendChild(el('div', 'pane-label', 'TRIM COLOR'));
+  _chips(pane, paintForTarget(custom, 'trim', vh), col => { custom.trimPaint = col; applyCustom(); });
+  pane.appendChild(el('div', 'pane-label', 'FINISH'));
+  for (const o of TRIM_FINISHES) {
+    const b = el('div', 'opt-btn' + (o.id === (custom.trimFinish || 'gloss') ? ' selected' : ''), o.name);
+    b.onclick = () => { custom.trimFinish = o.id; applyCustom(); };
+    pane.appendChild(b);
+  }
   if (vh.type === 'f1') {
     pane.appendChild(el('div', 'pane-label', 'AERO PARTS'));
     for (const o of F1_TRIM_TOGGLES) toggle(o, t[o.id] === undefined ? !!o.def : !!t[o.id]);
@@ -746,11 +754,21 @@ function emitExhaust(mesh, exId, intensity, dt, mode, boosting) {
   const ud = mesh.userData;
   if (!ud.exhaust) return;
   mesh.updateMatrixWorld(true);
-  const n = intensity * 90 * dt, count = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
+  const n = intensity * (exId === 'flame' ? 70 : 90) * dt, count = Math.floor(n) + (Math.random() < n % 1 ? 1 : 0);
   const back = _F.set(0, 0, -1).transformDirection(mesh.matrixWorld);
   for (let i = 0; i < count; i++) {
     ud.exSide = !ud.exSide;
     const p = _ev.copy(ud.exhaust[ud.exSide ? 1 : 0]).applyMatrix4(mesh.matrixWorld);
+    if (exId === 'flame' && mode !== 'boat') {
+      const hot = boosting ? 1 : 0, f = 0.75 + Math.random() * 0.5;
+      const j = () => (Math.random() - 0.5);
+      const bx = back.x, by = back.y, bz = back.z, sp0 = (boosting ? 13 : 8) * f;
+      spark(p.x, p.y, p.z, bx * sp0 * 1.5 + j() * 0.8, by * sp0 * 1.5 + j() * 0.8, bz * sp0 * 1.5 + j() * 0.8, hot ? 0.75 : 1, hot ? 0.9 : 0.97, hot ? 1 : 0.72, 0.8, 0.13, 0, 3);
+      spark(p.x, p.y, p.z, bx * sp0 + j() * 2, by * sp0 + j() * 2 + 0.6, bz * sp0 + j() * 2, hot ? 0.4 : 1, hot ? 0.75 : 0.7, hot ? 1 : 0.2, 1.5, 0.28 * f, -2, 3.2);
+      if (Math.random() < 0.55) spark(p.x, p.y, p.z, bx * sp0 * 0.55 + j() * 3.4, by * sp0 * 0.55 + 1.6 + j() * 3, bz * sp0 * 0.55 + j() * 3.4, hot ? 0.2 : 0.95, hot ? 0.5 : 0.38, hot ? 1 : 0.08, 2.1, 0.42 * f, -5, 3.6);
+      if (Math.random() < 0.08) spark(p.x, p.y, p.z, bx * 4 + j() * 7, by * 4 + 2 + Math.random() * 3, bz * 4 + j() * 7, 1, 0.75, 0.2, 0.45, 0.7, 14, 1.5);
+      continue;
+    }
     let r = 1, g = 0.4, b = 0.05, size = 1.3, life = 0.35, grav = 0, sp = 5;
     if (boosting) { r = 0.3; g = 0.8; b = 1; size = 2; life = 0.4; sp = 9; }
     else if (mode === 'boat') { r = g = b = 0.5; size = 1.1; life = 0.5; grav = 9; sp = 4; }

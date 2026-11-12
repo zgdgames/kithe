@@ -37,6 +37,13 @@ const EXHAUSTS = [
   {id:'gold',      name:'GOLD',      col:0xffcc00},
 ];
 
+const TRIM_FINISHES = [
+  {id:'gloss',  name:'GLOSS'},
+  {id:'matte',  name:'MATTE'},
+  {id:'carbon', name:'CARBON'},
+  {id:'chrome', name:'CHROME'},
+];
+
 const PAINT_TARGETS = ['body','bumpers','trim','wheels','lights'];
 
 const STICKERS = [
@@ -68,6 +75,7 @@ const TRIM_TOGGLES = [
   {id:'flares',   name:'FENDER FLARES'},
   {id:'lightbar', name:'LIGHT BAR'},
   {id:'rack',     name:'ROOF RACK'},
+  {id:'carbonroof', name:'ROOF PANEL'},
 ];
 
 const F1_TRIM_TOGGLES = [
@@ -173,13 +181,31 @@ function paintMat(col, o) {
   return new THREE.MeshStandardMaterial(Object.assign({color: col, metalness: 0.62, roughness: 0.28, envMap: ENV_MAP, envMapIntensity: 1.1}, o));
 }
 
+let _carbonTex = null;
+function carbonTexture() {
+  if (_carbonTex) return _carbonTex;
+  const cv = document.createElement('canvas'); cv.width = cv.height = 64;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#16171b'; g.fillRect(0, 0, 64, 64);
+  for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { g.fillStyle = (x + y) % 2 ? '#2a2c33' : '#0d0e11'; g.fillRect(x * 8, y * 8, 8, 8); g.fillStyle = 'rgba(255,255,255,0.07)'; g.fillRect(x * 8, y * 8 + ((x + y) % 2 ? 0 : 4), 8, 2); }
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 3); t.colorSpace = THREE.SRGBColorSpace; t.userData = {shared: true};
+  return (_carbonTex = t);
+}
+
+function trimMat(col, finish) {
+  if (finish === 'matte') return paintMat(col, {metalness: 0.1, roughness: 0.85});
+  if (finish === 'carbon') return paintMat(0xffffff, {map: carbonTexture(), metalness: 0.55, roughness: 0.25, envMapIntensity: 1.3});
+  if (finish === 'chrome') return paintMat(0xe8ecf4, {metalness: 1, roughness: 0.04, envMapIntensity: 1.8});
+  return paintMat(col, {metalness: 0.5, roughness: 0.35});
+}
+
 function vehicleMats(vhId, c) {
   const vh = VEHICLES[vhId] || VEHICLES.civic_type_r;
   const lights = paintForTarget(c, 'lights', vh);
   return {
     body:   paintMat(paintForTarget(c, 'body', vh)),
     bumper: paintMat(paintForTarget(c, 'bumpers', vh), {metalness: 0.4, roughness: 0.45}),
-    trim:   paintMat(paintForTarget(c, 'trim', vh), {metalness: 0.5, roughness: 0.35}),
+    trim:   trimMat(paintForTarget(c, 'trim', vh), c && c.trimFinish),
     rim:    paintMat(paintForTarget(c, 'wheels', vh), {metalness: 0.9, roughness: 0.22}),
     light:  new THREE.MeshStandardMaterial({color: lights, emissive: lights, emissiveIntensity: 1.5}),
   };
@@ -319,35 +345,42 @@ function carTrims(c, S, G) {
     dark.push(gBox(0.2, 0.1, 0.02, mx, my, mz - 0.1), gBox(0.14, 0.04, 0.06, sx * (Wb / 2 + 0.06), my - 0.06, mz + 0.03));
   }
 
+  const foil = (w, ch, th, x, y, z, tilt) => place(extrudeSide([[-ch / 2, 0], [-ch * 0.3, th], [ch * 0.25, th * 0.75], [ch / 2, th * 0.1], [ch * 0.2, -th * 0.15]], w, 0.01), x, y, z, tilt);
+  const plate = (h, ch, x, y, z) => place(extrudeSide([[-ch * 0.55, 0], [ch * 0.55, 0], [ch * 0.4, h], [-ch * 0.5, h * 0.82]], 0.035, 0.004), x, y, z);
   const sp = tr.spoiler && tr.spoiler !== 'stock' ? tr.spoiler : S.sp, rz = -hl + 0.28, top = S.deck;
-  if (sp === 'lip') trim.push(gBox(Wb * 0.96, 0.06, 0.32, 0, top + 0.07, rz + 0.02, -0.22));
-  else if (sp === 'ducktail') trim.push(gBox(Wb * 0.92, 0.1, 0.44, 0, top + 0.1, rz + 0.06, -0.34), gBox(Wb * 0.92, 0.06, 0.1, 0, top + 0.22, rz - 0.14, -0.1));
+  if (sp === 'lip') trim.push(foil(Wb * 0.96, 0.3, 0.06, 0, top + 0.05, rz + 0.02, -0.2), plate(0.1, 0.28, Wb * 0.48, top + 0.03, rz + 0.02), plate(0.1, 0.28, -Wb * 0.48, top + 0.03, rz + 0.02));
+  else if (sp === 'ducktail') trim.push(foil(Wb * 0.94, 0.46, 0.1, 0, top + 0.08, rz + 0.06, -0.36), foil(Wb * 0.94, 0.1, 0.07, 0, top + 0.22, rz - 0.14, -0.1));
   else if (sp === 'wing' || sp === 'bigwing' || sp === 'gt') {
     const big = sp === 'bigwing', gt = sp === 'gt';
-    const wh = big ? 0.6 : gt ? 0.44 : 0.34, w2 = Wb * (big ? 1.08 : gt ? 1.04 : 0.98), ch = big ? 0.54 : gt ? 0.5 : 0.4;
-    trim.push(gBox(w2, 0.045, ch, 0, top + wh, rz, -0.12));
-    if (big || gt) trim.push(gBox(w2 * 0.96, 0.035, ch * 0.5, 0, top + wh + 0.11, rz - ch * 0.42, -0.5));
+    const wh = big ? 0.62 : gt ? 0.46 : 0.36, w2 = Wb * (big ? 1.08 : gt ? 1.04 : 0.98), ch = big ? 0.56 : gt ? 0.5 : 0.4;
+    trim.push(foil(w2, ch, 0.07, 0, top + wh, rz, -0.14));
+    if (big || gt) trim.push(foil(w2 * 0.97, ch * 0.5, 0.045, 0, top + wh + 0.12, rz - ch * 0.4, -0.55));
+    if (gt) trim.push(foil(w2 * 0.9, 0.12, 0.05, 0, top + wh + 0.2, rz - ch * 0.55, -0.1));
     for (const sx of [-1, 1]) {
-      trim.push(gBox(0.05, big ? 0.36 : 0.26, ch * 1.12, sx * w2 / 2, top + wh + 0.02, rz - 0.02));
-      const px = sx * Wb * (gt ? 0.34 : 0.28);
-      trim.push(gBox(0.07, wh, 0.14, px, top + wh / 2, rz + 0.1), gBox(0.12, 0.06, 0.34, px, top + 0.03, rz + 0.1));
+      trim.push(plate(big ? 0.4 : 0.3, ch * 1.2, sx * w2 / 2, top + wh - 0.1, rz), plate(0.04, ch * 1.2, sx * w2 / 2, top + wh - 0.1, rz));
+      const px = sx * Wb * (gt ? 0.34 : 0.27);
+      trim.push(gBox(0.06, wh * 1.04, 0.14, px, top + wh / 2, rz + 0.12, 0.3), gBox(0.1, 0.05, 0.3, px, top + 0.03, rz + 0.2));
     }
   } else if (sp === 'roofwing') {
-    trim.push(gBox(Wc * 0.98, 0.05, 0.42, 0, S.roof + 0.12, roofZ0 - 0.1, -0.1));
-    for (const sx of [-1, 1]) trim.push(gBox(0.05, 0.18, 0.4, sx * Wc * 0.46, S.roof + 0.05, roofZ0 - 0.08));
+    trim.push(foil(Wc * 0.98, 0.4, 0.06, 0, S.roof + 0.1, roofZ0 - 0.1, -0.12));
+    for (const sx of [-1, 1]) trim.push(plate(0.2, 0.42, sx * Wc * 0.49, S.roof + 0.0, roofZ0 - 0.1));
   }
 
   if (on('splitter')) {
     const sy = S.splitY || 0.2;
-    trim.push(gBox(W - 0.05, 0.05, 0.6, 0, sy, hl + 0.14), gBox(W - 0.4, 0.03, 0.2, 0, sy + 0.03, hl + 0.46));
+    const sg = extrudeTop([[-W / 2 + 0.08, 0], [W / 2 - 0.08, 0], [W / 2 - 0.3, 0.62], [-W / 2 + 0.3, 0.62]], 0.045, 0.01); sg.translate(0, sy, hl - 0.05);
+    trim.push(sg);
     for (const sx of [-1, 1]) {
-      trim.push(gBox(0.03, 0.22, 0.32, sx * (W / 2 - 0.28), sy + 0.14, hl + 0.04, 0, sx * 0.25));
+      trim.push(gBox(0.03, 0.2, 0.34, sx * (W / 2 - 0.3), sy + 0.12, hl + 0.1, 0, sx * 0.3), gBox(0.03, 0.14, 0.3, sx * (W / 2 - 0.46), sy + 0.1, hl + 0.14, 0, sx * 0.3));
+      trim.push(plate(0.14, 0.6, sx * (W / 2 - 0.1), sy, hl + 0.2));
       dark.push(gBox(0.03, 0.12, 0.03, sx * 0.5, sy + 0.06, hl + 0.2));
     }
   }
   if (on('skirts')) for (const sx of [-1, 1]) {
-    const len = S.wb * 2 - wr * 2 + 0.55;
-    trim.push(gBox(0.1, 0.18, len, sx * (W / 2 - 0.02), sill, 0), gBox(0.16, 0.05, len - 0.1, sx * (W / 2 + 0.02), sill - 0.1, 0));
+    const len = S.wb * 2 - wr * 2 + 0.7;
+    const sk = extrudeSide([[-len / 2, 0], [len / 2, 0], [len / 2 - 0.3, 0.2], [-len / 2 + 0.3, 0.2]], 0.1, 0.02); sk.translate(sx * (W / 2 - 0.02), sill - 0.08, 0);
+    trim.push(sk, gBox(0.16, 0.03, len - 0.5, sx * (W / 2 + 0.04), sill - 0.08, 0));
+    for (let k = -2; k <= 2; k++) dark.push(gBox(0.02, 0.1, 0.05, sx * (W / 2 + 0.07), sill + 0.05, k * len * 0.16));
   }
   if (on('diffuser')) {
     trim.push(gBox(Wb - 0.5, 0.04, 0.62, 0, 0.2, -hl + 0.1, 0.2));
@@ -368,6 +401,7 @@ function carTrims(c, S, G) {
     trim.push(gBox(Wc * 0.78, 0.05, 0.2, 0, S.roof + 0.1, mid + 0.12));
     for (let k = 0; k < 6; k++) light.push(gBox(Wc * 0.78 / 6 - 0.03, 0.08, 0.06, -Wc * 0.39 + (k + 0.5) * Wc * 0.78 / 6, S.roof + 0.15, mid + 0.22));
   }
+  if (on('carbonroof')) trim.push(gBox(Wc * 0.9, 0.035, Math.max(0.4, roofZ1 - roofZ0 - 0.06), 0, S.roof + 0.06, mid));
   if (on('rack')) {
     const len = Math.max(0.5, roofZ1 - roofZ0 - 0.1);
     for (const sx of [-1, 1]) { trim.push(gBox(0.04, 0.04, len, sx * Wc * 0.42, S.roof + 0.1, mid)); for (const z of [mid - len * 0.4, mid + len * 0.4]) trim.push(gBox(0.04, 0.08, 0.04, sx * Wc * 0.42, S.roof + 0.06, z)); }

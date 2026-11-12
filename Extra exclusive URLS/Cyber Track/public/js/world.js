@@ -1339,7 +1339,7 @@ function buildFinish(f) {
 // PARTICLES + EFFECTS
 // ═══════════════════════════════════════════════════════════════════════
 const PMAX = 3600;
-const PS = {i: 0, pos: null, col: null, size: null, alpha: null, vel: new Float32Array(PMAX * 3), life: new Float32Array(PMAX), max: new Float32Array(PMAX), grav: new Float32Array(PMAX), s0: new Float32Array(PMAX), pts: null};
+const PS = {i: 0, pos: null, col: null, size: null, alpha: null, vel: new Float32Array(PMAX * 3), life: new Float32Array(PMAX), max: new Float32Array(PMAX), grav: new Float32Array(PMAX), cool: new Float32Array(PMAX), s0: new Float32Array(PMAX), pts: null};
 const FX = [];
 
 function initParticles() {
@@ -1362,12 +1362,12 @@ function initParticles() {
 
 function attachParticles(scene) { scene.add(PS.pts); }
 
-function spark(x, y, z, vx, vy, vz, r, g, b, size, life, grav) {
+function spark(x, y, z, vx, vy, vz, r, g, b, size, life, grav, cool) {
   const i = PS.i; PS.i = (i + 1) % PMAX;
   PS.pos[i*3] = x; PS.pos[i*3+1] = y; PS.pos[i*3+2] = z;
   PS.vel[i*3] = vx; PS.vel[i*3+1] = vy; PS.vel[i*3+2] = vz;
   PS.col[i*3] = r; PS.col[i*3+1] = g; PS.col[i*3+2] = b;
-  PS.s0[i] = size; PS.life[i] = PS.max[i] = life; PS.grav[i] = grav || 0;
+  PS.s0[i] = size; PS.life[i] = PS.max[i] = life; PS.grav[i] = grav || 0; PS.cool[i] = cool || 0;
 }
 
 function updateParticles(dt) {
@@ -1377,6 +1377,7 @@ function updateParticles(dt) {
     const k = Math.max(0, PS.life[i] / PS.max[i]);
     PS.vel[i*3+1] -= PS.grav[i] * dt;
     PS.pos[i*3] += PS.vel[i*3] * dt; PS.pos[i*3+1] += PS.vel[i*3+1] * dt; PS.pos[i*3+2] += PS.vel[i*3+2] * dt;
+    if (PS.cool[i] > 0) { const c = PS.cool[i] * dt; PS.col[i*3+1] *= 1 - c * 0.9; PS.col[i*3+2] *= 1 - c * 2.4; PS.col[i*3] *= 1 - c * 0.15; PS.vel[i*3] *= 1 - 2 * dt; PS.vel[i*3+2] *= 1 - 2 * dt; }
     PS.alpha[i] = k; PS.size[i] = PS.s0[i] * (0.4 + 0.6 * k);
   }
   const a = PS.pts.geometry.attributes;

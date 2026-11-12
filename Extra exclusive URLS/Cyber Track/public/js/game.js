@@ -559,7 +559,11 @@ function setupInput() {
     if (hit) inputDirty = true;
     return hit;
   };
+  document.addEventListener('pointerdown', () => Snd.init());
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('button,.opt-btn,.ctab,.track-btn,.vh-slot,.paint-chip,.fp-key,.vote-btn')) Snd.sfx('click'); });
   document.addEventListener('keydown', e => {
+    Snd.init();
+    if (e.code === 'KeyM' && !e.repeat) flash(Snd.toggle() ? '🔇 SOUND OFF' : '🔊 SOUND ON', '#00ffcc', 1200);
     const racing = gamePhase === 'race' || gamePhase === 'spectate';
     if (set(e, true) && racing) e.preventDefault();
     if (e.code === 'Space' && gamePhase === 'race') { if (!e.repeat) triggerBoostAbility(); e.preventDefault(); }
@@ -575,13 +579,14 @@ function setupInput() {
 window.triggerBoostAbility = function () {
   if (gamePhase !== 'race' || !me) return;
   if (me.hasMissile) {
-    socket.emit('fire_missile'); me.hasMissile = false;
+    socket.emit('fire_missile'); me.hasMissile = false; Snd.sfx('missile');
     flash('🚀 MISSILE FIRED!', '#ff3300', 2000);
   } else if (me.hasEMP) {
-    socket.emit('fire_emp'); me.hasEMP = false;
+    socket.emit('fire_emp'); me.hasEMP = false; Snd.sfx('emp');
     flash('📡 EMP FIRED!', '#4488ff', 2000);
   } else if (boostAbilityCooldown <= 0) {
     boostAbilityCooldown = BOOST_ABILITY_DUR + BOOST_ABILITY_CD;
+    Snd.sfx('boost');
     socket.emit('boost_ability');
     me.boostT = Math.max(me.boostT, BOOST_ABILITY_DUR);
     boostGlowT = 1.5;
@@ -814,6 +819,7 @@ function carFx(c, dt) {
 // ═══════════════════════════════════════════════════════════════════════
 // RACE LOOP
 // ═══════════════════════════════════════════════════════════════════════
+let _wallSnd = 0, _wasBoost = false, _wasDrift = false;
 function stepMe(inp, dt) {
   if (!me || gamePhase !== 'race') return;
   const wasGround = me.onGround, n = Math.max(1, Math.ceil(dt / 0.026));
@@ -821,10 +827,12 @@ function stepMe(inp, dt) {
     env.t = raceT;
     CT.stepCar(me, inp, dt / n, W.tr, env);
     if (me.landed > 9 && !wasGround) {
+      Snd.sfx('land');
       shakeT = Math.min(0.5, me.landed / 60);
       for (let k = 0; k < 14; k++) spark(me.x + (Math.random() - 0.5) * 3, me.y + 0.2, me.z + (Math.random() - 0.5) * 3, (Math.random() - 0.5) * 8, 1 + Math.random() * 3, (Math.random() - 0.5) * 8, 0.5, 0.5, 0.55, 2.4, 0.5, 4);
     }
     if (me.wallHit && Math.abs(me.speed) > 8) {
+      if (performance.now() - _wallSnd > 280) { _wallSnd = performance.now(); Snd.sfx('wall'); }
       shakeT = Math.max(shakeT, 0.12);
       const sg = me.lat > 0 ? 1 : -1, lx = Math.cos(me.ta) * sg, lz = -Math.sin(me.ta) * sg;
       if (Math.random() < 0.6) spark(me.x + lx * 1.2, me.y + 0.6, me.z + lz * 1.2, -lx * 5 + (Math.random() - 0.5) * 6, 2 + Math.random() * 5, -lz * 5 + (Math.random() - 0.5) * 6, 1, 0.75, 0.3, 0.9, 0.4, 20);
@@ -905,6 +913,23 @@ function updateCamera(dt) {
   W.head.target.position.set(c.x + Math.sin(c.angle) * 30, c.y + c.vsl * 30, c.z + Math.cos(c.angle) * 30);
 }
 
+function updateSound() {
+  const sc = cars[gamePhase === 'race' ? myCarId : specTarget];
+  if (!sc || sc.dead || !W.tr) { Snd.engine(null); Snd.rival(null); return; }
+  const mode = W.tr.mode, vt = VEHICLES[sc.vh] && VEHICLES[sc.vh].type;
+  const kind = mode === 'boat' ? 'boat' : mode === 'plane' ? 'plane' : vt === 'f1' ? 'f1' : vt === 'truck' ? 'truck' : 'car';
+  const boost = sc.boostT > 0;
+  Snd.engine({speed: sc.speed, top: sc.mine && me ? me.vs.top : 50, kind, boost, throttle: sc.mine ? K.u : true, air: mode !== 'plane' && sc.y - sc.gyv > 0.6});
+  if (boost && !_wasBoost && sc.mine) Snd.sfx('boost');
+  _wasBoost = boost;
+  const drift = sc.mine && sc.driftT > 250 && mode === 'car';
+  if (drift && !_wasDrift) Snd.sfx('drift');
+  _wasDrift = drift;
+  let bd = 1e9, bc = null;
+  for (const o of Object.values(cars)) { if (o === sc || o.dead) continue; const d = Math.hypot(o.x - sc.x, o.y - sc.y, o.z - sc.z); if (d < bd) { bd = d; bc = o; } }
+  if (bc && bd < 90) Snd.rival(bd, bc.speed, 50); else Snd.rival(null);
+}
+
 function updateRace(dt, ts) {
   if (PS.pts.parent !== raceScene) attachParticles(raceScene);
   if (!W.tr) return;
@@ -923,6 +948,7 @@ function updateRace(dt, ts) {
     carFx(c, dt);
   }
   if (glitchT > 0) glitchT -= dt;
+  updateSound();
 
   updateCamera(dt);
   updateWorld(dt, performance.now(), env);
@@ -944,7 +970,7 @@ function frame(ts) {
   _last = ts;
   if (dt <= 0) return;
   if (gamePhase === 'race' || gamePhase === 'spectate' || gamePhase === 'over') updateRace(dt, ts);
-  else updateGarage(dt, ts);
+  else { updateGarage(dt, ts); Snd.engine(null); Snd.rival(null); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1169,7 +1195,7 @@ function setupSocket(s) {
     for (const sv of list) {
       const c = cars[sv.id];
       if (!c || c.dead) continue;
-      if (c.mine && sv.hp < c.hp - 0.5) { dmgFlashT = Math.max(dmgFlashT, 0.25); shakeT = Math.max(shakeT, 0.15); }
+      if (c.mine && sv.hp < c.hp - 0.5) { Snd.sfx('hit'); dmgFlashT = Math.max(dmgFlashT, 0.25); shakeT = Math.max(shakeT, 0.15); }
       c.hp = sv.hp; c.pos = sv.p; c.shield = !!sv.sh; c.ghost = !!sv.gT; c.jug = !!sv.jT;
       if (c.mine) myPos = sv.p;
       if (c.mine && gamePhase === 'race') reconcile(sv);
@@ -1181,6 +1207,7 @@ function setupSocket(s) {
     const c = cars[id];
     if (c && !c.dead) {
       c.dead = true;
+      if (id === myCarId || raceCam.position.distanceTo(c.mesh.position) < 120) Snd.sfx('explode');
       explode(c.x, c.y, c.z, c.mesh.userData.paint, 70, 22);
       explode(c.x, c.y, c.z, 0xff3300, 45, 15);
       explode(c.x, c.y, c.z, 0xffaa00, 30, 10);
@@ -1201,6 +1228,8 @@ function setupSocket(s) {
     const pu = W.powerups.find(p => p.id === id);
     if (pu) { pu.active = false; if (pu.mesh) { pu.mesh.visible = false; explode(pu.mesh.position.x, pu.mesh.position.y - 0.5, pu.mesh.position.z, PU_COLORS[type] || 0xffffff, 16, 7); } }
     if (carId === myCarId) {
+      const snd = {boost: 'boost', repair: 'repair', shield: 'shield', ghost: 'ghost', juggernaut: 'jugger', swap: 'swap', scrambler: 'scramble', warp: 'warp', lightning: 'pickup', leech: 'leech', cryo: 'cryo', spring: 'spring', spike_p: 'hit', oil_p: 'zone', slow: 'zone', spin: 'zone', reverse: 'scramble'};
+      Snd.sfx(snd[type] || 'pickup');
       const labels = {boost: '⚡ BOOST!', repair: '❤ REPAIRED', slow: '⚠ SLOWED', spin: '↺ SPINNING', reverse: '⇄ REVERSED', spike_p: '💥 SPIKED', oil_p: '⚠ OIL', shield: '🛡 SHIELD', emp: '📡 EMP READY', missile: '🚀 MISSILE READY', ghost: '👻 PHASE SHIFT', spring: '⤴ SPRING JUMP', juggernaut: '🛡 JUGGERNAUT', warp: '🌀 WARP DASH', swap: '🔀 POSITION SWAP', cryo: '❄ CRYO BLAST', lightning: '⚡ THUNDER STRIKE', leech: '🧛 LIFE LEECH', scrambler: '📻 SCRAMBLER'};
       flash(labels[type] || type, type === 'boost' ? '#00ffcc' : type === 'repair' ? '#44ff44' : '#ff8800', 2000);
       if (type === 'boost') boostGlowT = 0.8;
@@ -1209,9 +1238,9 @@ function setupSocket(s) {
   });
   s.on('powerup_respawn', ({id}) => { const pu = W.powerups.find(p => p.id === id); if (pu) { pu.active = true; if (pu.mesh) pu.mesh.visible = true; } });
 
-  s.on('vote_start', ({opts, dur, final: isFinal}) => { if (gamePhase === 'race') showVote(opts, dur, isFinal); });
+  s.on('vote_start', ({opts, dur, final: isFinal}) => { Snd.sfx('vote'); if (gamePhase === 'race') showVote(opts, dur, isFinal); });
   s.on('vote_update', ({counts, total}) => updateVoteCounts(counts, total));
-  s.on('vote_result', ({winner, counts}) => showVoteResult(winner, counts));
+  s.on('vote_result', ({winner, counts}) => { Snd.sfx('votedone'); showVoteResult(winner, counts); });
 
   s.on('track', ({st, finishF}) => {
     if (!W.tr) return;
@@ -1221,11 +1250,12 @@ function setupSocket(s) {
     camInit = swapped ? false : camInit;
     showMatrixRain(600);
     if (W.roadMat) { const base = W.roadMat.emissiveIntensity; let k = 1; FX.push(dt => { k -= dt * 1.6; if (!W.roadMat) return true; W.roadMat.emissiveIntensity = base + Math.max(0, k) * 3; return k <= 0; }); }
+    if (swapped) Snd.sfx('trackswap');
     if (swapped) flash('▶ ' + CT.TRACKS[st.type].name, '#00ffcc', 3000);
   });
-  s.on('zone', z => { W.zones.push(z); W.tr.nramps = CT.zoneRamps(W.tr, W.zones); buildZone(z); });
+  s.on('zone', z => { Snd.sfx('zone'); W.zones.push(z); W.tr.nramps = CT.zoneRamps(W.tr, W.zones); buildZone(z); });
   s.on('obstacles', ({obs}) => { for (const o of obs) { W.obstacles.push(o); buildObstacle(o); } });
-  s.on('finish_placed', ({f}) => { W.finishF = f; rebuildEntities(); flash('🏁 FINISH LINE PLACED', '#ff00ff', 3000); });
+  s.on('finish_placed', ({f}) => { Snd.sfx('alarm'); W.finishF = f; rebuildEntities(); flash('🏁 FINISH LINE PLACED', '#ff00ff', 3000); });
 
   s.on('gravity', ({reverse} = {}) => {
     if (me && gamePhase === 'race') { me.vy = reverse ? 11 : 20; me.y += 0.6; me.onGround = false; me.gy = null; }
@@ -1262,22 +1292,25 @@ function setupSocket(s) {
     flash('⚡ LASER GATES', '#ff0044');
   });
   s.on('fog_event', ({dur}) => { W.fogT = dur; flash('🌫 HEAVY FOG', '#aaddff', 3000); });
+  s.on('low_grav', () => Snd.sfx('swell'));
   s.on('low_grav', () => flash('🪐 LOW GRAVITY', '#88ffaa', 3000));
 
   s.on('missile_fired', ({fromId, targetId, eta}) => {
     const from = carAt(fromId);
     if (!from) return;
     explode(from.x, from.y + 0.5, from.z, 0xff3300, 10, 5);
+    if (fromId !== myCarId) Snd.sfx('missile');
     launchMissile(from.mesh, () => { const t = carAt(targetId); return t ? t.mesh : null; }, eta);
     if (targetId === myCarId) flash('⚠ MISSILE INCOMING', '#ff3300', 1500);
   });
-  s.on('emp_fired', ({id}) => { const c = carAt(id); if (c) { explode(c.x, c.y, c.z, 0x4488ff, 40, 15); shockRing(c.x, c.y + 1, c.z, 0x4488ff, 26, true); } });
-  s.on('near_miss', ({id}) => { if (id === myCarId) { flash('✨ NEAR MISS +BOOST', '#ffff00', 1500); boostGlowT = 0.5; } });
-  s.on('bump', ({x, y, z}) => { if (raceCam.position.distanceToSquared(_F.set(x, y, z)) < 120 * 120) for (let k = 0; k < 8; k++) spark(x, y, z, (Math.random() - 0.5) * 12, Math.random() * 7, (Math.random() - 0.5) * 12, 1, 0.8, 0.4, 0.9, 0.35, 20); });
+  s.on('emp_fired', ({id}) => { const c = carAt(id); if (c) { if (id !== myCarId) Snd.sfx('emp'); explode(c.x, c.y, c.z, 0x4488ff, 40, 15); shockRing(c.x, c.y + 1, c.z, 0x4488ff, 26, true); } });
+  s.on('near_miss', ({id}) => { if (id === myCarId) { Snd.sfx('nearmiss'); flash('✨ NEAR MISS +BOOST', '#ffff00', 1500); boostGlowT = 0.5; } });
+  s.on('bump', ({x, y, z}) => { if (raceCam.position.distanceToSquared(_F.set(x, y, z)) < 60 * 60) Snd.sfx('bump'); if (raceCam.position.distanceToSquared(_F.set(x, y, z)) < 120 * 120) for (let k = 0; k < 8; k++) spark(x, y, z, (Math.random() - 0.5) * 12, Math.random() * 7, (Math.random() - 0.5) * 12, 1, 0.8, 0.4, 0.9, 0.35, 20); });
   s.on('car_hit', ({id, type}) => {
     const c = carAt(id);
     if (!c) return;
-    if (type === 'missile') explode(c.x, c.y, c.z, 0xff5500, 55, 18);
+    if (type === 'missile') { explode(c.x, c.y, c.z, 0xff5500, 55, 18); Snd.sfx('explode'); }
+    if (type === 'cryo') Snd.sfx('cryo'); if (type === 'lightning') Snd.sfx('lightning'); if (type === 'leech_gain') Snd.sfx('leech'); if (type === 'spring') Snd.sfx('spring'); if (type === 'shield_block') Snd.sfx('shield');
     if (type === 'emp') explode(c.x, c.y, c.z, 0x44ccff, 30, 10);
     if (type === 'spring') { explode(c.x, c.y, c.z, 0xffee44, 26, 12); shockRing(c.x, c.y + 0.3, c.z, 0xffee44, 7, true); if (id === myCarId && me) { me.vy = 24; me.onGround = false; me.gy = null; } }
     if (type === 'cryo') { explode(c.x, c.y + 0.5, c.z, 0x88ddff, 50, 14); shockRing(c.x, c.y + 0.5, c.z, 0x88ddff, 10, true); }
@@ -1297,6 +1330,7 @@ function setupSocket(s) {
     if (c.sv) { c.sv.x = x; c.sv.y = y; c.sv.z = z; c.sv.a = a; }
     if (id === myCarId && me) { Object.assign(me, {x, y, z, angle: a, vy: 0, gy: null, wi: -1, onGround: W.tr.mode !== 'plane'}); camInit = false; }
     explode(x, y + 0.5, z, 0xaa66ff, 28, 12);
+    if (id === myCarId) Snd.sfx('warp');
     shockRing(x, y + 1, z, 0xaa66ff, 9, true);
   });
   s.on('player_left', () => {});
@@ -1304,6 +1338,7 @@ function setupSocket(s) {
   s.on('race_over', ({winner}) => {
     hideVote();
     const title = $('go-title'), sub = $('go-sub');
+    Snd.sfx(winner && winner.id === myCarId ? 'win' : 'lose');
     if (!winner) { title.textContent = 'NO SURVIVORS'; sub.textContent = 'Everyone eliminated.'; }
     else if (winner.id === myCarId) {
       title.textContent = 'YOU WIN'; sub.textContent = 'You are the last car standing.';

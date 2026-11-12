@@ -699,8 +699,13 @@ function surface(c) {
   if (tr.mode === 'boat') {
     const fx = Math.sin(c.angle), fz = Math.cos(c.angle);
     c.gyv = CT.waveH(c.x, c.z, raceT);
-    c.tsl = (CT.waveH(c.x + fx * 2, c.z + fz * 2, raceT) - CT.waveH(c.x - fx * 2, c.z - fz * 2, raceT)) / 4;
-    c.trl = (CT.waveH(c.x + fz * 1.2, c.z - fx * 1.2, raceT) - CT.waveH(c.x - fz * 1.2, c.z + fx * 1.2, raceT)) / 2.4;
+    const o = CT.sample(tr, c.x, c.y, c.z, c.wi, _so);
+    c.wi = o.i;
+    CT.rampAt(tr, o.s, _rp); CT.nrampAt(tr, o.s, o.lat, _nrp);
+    const rel = c.angle - o.ang, rs = _rp.sl + _nrp.sl;
+    c.gyv += _rp.h + _nrp.h;
+    c.tsl = (CT.waveH(c.x + fx * 2, c.z + fz * 2, raceT) - CT.waveH(c.x - fx * 2, c.z - fz * 2, raceT)) / 4 + Math.cos(rel) * rs;
+    c.trl = (CT.waveH(c.x + fz * 1.2, c.z - fx * 1.2, raceT) - CT.waveH(c.x - fz * 1.2, c.z + fx * 1.2, raceT)) / 2.4 - Math.sin(rel) * rs;
     c.offRoad = false;
   } else if (tr.mode === 'car') {
     const o = CT.sample(tr, c.x, c.y, c.z, c.wi, _so);
@@ -1352,6 +1357,7 @@ function setupSocket(s) {
     if (type === 'missile') { explode(c.x, c.y, c.z, 0xff5500, 55, 18); Snd.sfx('explode'); Snd.sfx('crashbig'); }
     if (type === 'cryo') Snd.sfx('cryo'); if (type === 'lightning') Snd.sfx('lightning'); if (type === 'leech_gain') Snd.sfx('leech'); if (type === 'spring') Snd.sfx('spring'); if (type === 'shield_block') Snd.sfx('shield');
     if (type === 'emp') explode(c.x, c.y, c.z, 0x44ccff, 30, 10);
+    if (type === 'spikehit') { explode(c.x, c.y, c.z, 0xff3355, 26, 11); Snd.sfx('crash'); }
     if (type === 'spring') { explode(c.x, c.y, c.z, 0xffee44, 26, 12); shockRing(c.x, c.y + 0.3, c.z, 0xffee44, 7, true); if (id === myCarId && me) { me.vy = 24; me.onGround = false; me.gy = null; } }
     if (type === 'cryo') { explode(c.x, c.y + 0.5, c.z, 0x88ddff, 50, 14); shockRing(c.x, c.y + 0.5, c.z, 0x88ddff, 10, true); }
     if (type === 'lightning') { lightningBolt(c.x, c.y, c.z); explode(c.x, c.y, c.z, 0xffff88, 50, 16); }

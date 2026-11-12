@@ -297,6 +297,7 @@ function npcInput(car, L, dt) {
   for (const z of L.zones) {
     if (z.t !== 'spike' && z.t !== 'shock' && z.t !== 'oil') continue;
     const zd = Math.hypot(car.x - z.x, car.z - z.z);
+    if (z.t === 'spike' && tr.mode === 'plane') { if (skill >= 1 && zd < 80) { car.laneV *= 0.96; car.laneF *= 0.96; } continue; }
     if (z.t === 'spike' && tr.mode === 'car' && skill >= 1 && zd < 60 && zd > z.r * 0.6 && Math.abs(car.y - z.y) < 8) {
       steer += wrap(Math.atan2(z.x - car.x, z.z - car.z) - steer) * (skill === 2 ? 0.8 : 0.5);
       continue;
@@ -381,6 +382,19 @@ function checkWalls(L, car) {
 
 function checkZones(L, car, dt) {
   for (const z of L.zones) {
+    if (L.tr.mode === 'plane' && z.t === 'spike') {
+      if (z._tr !== L.tr) { const p = CT.placeAt(L.tr, z.f, 0), l = Math.hypot(p.tx, p.sl, p.tz) || 1; z.T = [p.tx / l, p.sl / l, p.tz / l]; z._tr = L.tr; }
+      const dx = car.x - z.x, dy = car.y - z.y, dz = car.z - z.z, along = dx * z.T[0] + dy * z.T[1] + dz * z.T[2];
+      if (Math.abs(along) > 3.5) continue;
+      const rad = Math.sqrt(Math.max(0, dx * dx + dy * dy + dz * dz - along * along)), R = L.w / 2, hole = R * (z.mega ? 0.42 : 0.5);
+      const now = Date.now();
+      if (rad > hole - 2.5 && rad < R + 6 && now - (car.ringT || 0) > 1200) {
+        car.ringT = now;
+        if (car.shieldOn) { car.shieldOn = false; io.to(L.id).emit('car_hit', {id: car.id, type: 'shield_block'}); }
+        else { if (L.alive.size > 1) car.hp -= z.mega ? 45 : 28; car.speed *= 0.7; io.to(L.id).emit('car_hit', {id: car.id, type: 'spikehit'}); }
+      }
+      continue;
+    }
     if (!near(L, car, z, z.r)) continue;
     if (L.tr.mode !== 'plane' && !car.onGround && z.t !== 'boost') continue;
     if (z.t === 'boost') car.boostT = C.BOOST_DUR;

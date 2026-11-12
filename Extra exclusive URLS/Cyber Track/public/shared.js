@@ -76,7 +76,7 @@ function genTrack(type) {
   switch (type) {
     case 0: cp = ringPts(10, a => { const r = 190 + Math.sin(a*2)*40; return {x:Math.cos(a)*r+rnd(18), z:Math.sin(a)*r*0.7+rnd(12), y:8+5*Math.sin(a*2+p)+3*Math.sin(a*3+q)}; }); break;
     case 1: cp = ringPts(16, a => { const r = 135 + Math.sin(a*4)*48; return {x:Math.cos(a)*r+rnd(22), z:Math.sin(a)*r+rnd(18), y:16+9*Math.sin(a*2+p)+4*Math.sin(a*5+q)}; }); break;
-    case 2: cp = ringPts(8, a => ({x:Math.cos(a)*250+rnd(20), z:Math.sin(a)*170+rnd(15), y:0})); break;
+    case 2: cp = ringPts(8, a => ({x:Math.cos(a)*250+rnd(20), z:Math.sin(a)*170+rnd(15), y:0})); ramps = [R(0.28, 20, 3.6), R(0.72, 20, 3.6)]; break;
     case 3: cp = ringPts(12, a => ({x:Math.cos(a)*230+Math.sin(a*3)*30+rnd(18), z:Math.sin(a)*150+Math.cos(a*2)*25+rnd(14), y:4+2*Math.sin(a*2+p)+1.2*Math.sin(a*3+q)})); break;
     case 4: cp = ringPts(14, a => { const r = 128 + Math.sin(a*5)*36; return {x:Math.cos(a)*r+rnd(20), z:Math.sin(a)*r+rnd(16), y:24+13*Math.sin(a+p)+5*Math.sin(a*3+q)}; }); break;
     case 5: cp = ringPts(12, a => { const r = 175 + Math.sin(a*3)*60; return {x:Math.cos(a)*r+rnd(28), z:Math.sin(a)*r+rnd(24), y:36+20*Math.sin(a+p)+7*Math.sin(a*2+q)}; }); ramps = [R(0.37), R(0.8)]; break;
@@ -91,7 +91,7 @@ function genTrack(type) {
     case 15: cp = ringPts(14, a => { const r = 145 + Math.sin(a*3)*48; return {x:Math.cos(a)*r+rnd(20), z:Math.sin(a)*r+rnd(16), y:22+13*Math.sin(a+p)+5*Math.sin(a*3+q)}; }); break;
     case 16: cp = ringPts(10, a => ({x:Math.cos(a)*225+Math.sin(a*2)*40+rnd(22), z:Math.sin(a)*150+rnd(16), y:5+4*Math.sin(a*2+p)+2*Math.sin(a*3+q)})); ramps = [R(0.22, 18, 3.8), R(0.68, 18, 3.8)]; break;
     case 17: cp = ringPts(12, a => { const r = 175 + Math.sin(a*4)*42; return {x:Math.cos(a)*r+rnd(20), z:Math.sin(a)*r*0.8+rnd(16), y:10+7*Math.sin(a*2+p)+3*Math.sin(a*3+q)}; }); break;
-    case 18: cp = ringPts(9, a => ({x:Math.cos(a)*245+Math.sin(a*3)*30+rnd(20), z:Math.sin(a)*175+rnd(15), y:0})); break;
+    case 18: cp = ringPts(9, a => ({x:Math.cos(a)*245+Math.sin(a*3)*30+rnd(20), z:Math.sin(a)*175+rnd(15), y:0})); ramps = [R(0.3, 20, 3.6), R(0.75, 20, 3.6)]; break;
     case 19: cp = ringPts(10, a => ({x:Math.cos(a)*265+rnd(25), z:Math.sin(a)*190+rnd(20), y:95+30*Math.sin(a*2+p)+18*Math.sin(a*3+q)})); break;
     default: {
       const a1 = 6+Math.random()*8, a2 = 4+Math.random()*5, a3 = 2+Math.random()*4;
@@ -192,7 +192,7 @@ function sAtF(tr, f) {
 
 function zoneRamps(tr, zones) {
   const out = [];
-  if (tr.mode !== 'car') return out;
+  if (tr.mode === 'plane') return out;
   for (const z of zones) {
     if (z.t !== 'spike') continue;
     const len = 10;
@@ -361,8 +361,11 @@ function stepCar(c, inp, dt, tr, env) {
     if (tr.mode === 'boat') {
       roadY = waveH(c.x, c.z, env.t);
       const fx = Math.sin(c.angle), fz = Math.cos(c.angle);
-      c.sl = (waveH(c.x + fx*2, c.z + fz*2, env.t) - waveH(c.x - fx*2, c.z - fz*2, env.t)) / 4;
-      c.rl = (waveH(c.x + fz*1.2, c.z - fx*1.2, env.t) - waveH(c.x - fz*1.2, c.z + fx*1.2, env.t)) / 2.4;
+      rampAt(tr, o.s, _rp);
+      nrampAt(tr, o.s, lat, _nr);
+      roadY += _rp.h + _nr.h;
+      c.sl = (waveH(c.x + fx*2, c.z + fz*2, env.t) - waveH(c.x - fx*2, c.z - fz*2, env.t)) / 4 + ca * (_rp.sl + _nr.sl);
+      c.rl = (waveH(c.x + fz*1.2, c.z - fx*1.2, env.t) - waveH(c.x - fz*1.2, c.z + fx*1.2, env.t)) / 2.4 - sa * (_rp.sl + _nr.sl);
     } else {
       rampAt(tr, o.s, _rp);
       nrampAt(tr, o.s, lat, _nr);

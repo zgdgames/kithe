@@ -272,23 +272,25 @@ function buildTrackMeshes(tr, th) {
     G.add(W.wallMesh, W.railMesh);
     G.add(new THREE.Mesh(deck.build(), new THREE.MeshStandardMaterial({color: 0x14161e, roughness: 0.8, metalness: 0.3})));
 
-    // Ramps
-    if (tr.ramps.length) {
-      const rs = new Strips(), n = 4, hw = half - 0.25;
-      for (const r of tr.ramps) {
-        const pt = (k, lat, top) => {
-          const p = CT.placeAt(tr, (r.s0 + r.len * 0.999 * k / n) / tr.L, lat, {});
-          return [p.x, top ? p.y + 0.04 : p.y - r.h * k / n * 0.999 + 0.02, p.z];
-        };
-        rs.add(n, k => pt(k, hw, true), k => pt(k, -hw, true), k => k / n * 2);
-        rs.add(n, k => pt(k, hw, false), k => pt(k, hw, true));
-        rs.add(n, k => pt(k, -hw, true), k => pt(k, -hw, false));
-        rs.quad(pt(n, hw, true), pt(n, hw, false), pt(n, -hw, true), pt(n, -hw, false));
-      }
-      const rm = new THREE.MeshStandardMaterial({color: 0x222630, map: null, emissive: 0xffaa00, emissiveMap: TEX.chev, emissiveIntensity: 1.6, roughness: 0.5, metalness: 0.4});
-      G.add(new THREE.Mesh(rs.build(), rm));
-      W.anim.push(() => { TEX.chev.offset.y = -W.t * 1.5; });
+  }
+
+  // Ramps (road and water)
+  if (tr.mode !== 'plane' && tr.ramps.length) {
+    const boat = tr.mode === 'boat', rs = new Strips(), n = 4, hw = half - 0.25;
+    for (const r of tr.ramps) {
+      const pt = (k, lat, top) => {
+        const p = CT.placeAt(tr, (r.s0 + r.len * 0.999 * k / n) / tr.L, lat, {}), hk = r.h * k / n * 0.999;
+        if (boat) return [p.x, top ? hk + 0.04 : -0.6, p.z];
+        return [p.x, top ? p.y + 0.04 : p.y - hk + 0.02, p.z];
+      };
+      rs.add(n, k => pt(k, hw, true), k => pt(k, -hw, true), k => k / n * 2);
+      rs.add(n, k => pt(k, hw, false), k => pt(k, hw, true));
+      rs.add(n, k => pt(k, -hw, true), k => pt(k, -hw, false));
+      rs.quad(pt(n, hw, true), pt(n, hw, false), pt(n, -hw, true), pt(n, -hw, false));
     }
+    const rm = new THREE.MeshStandardMaterial({color: boat ? 0x24303c : 0x222630, map: null, emissive: 0xffaa00, emissiveMap: TEX.chev, emissiveIntensity: 1.6, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide});
+    G.add(new THREE.Mesh(rs.build(), rm));
+    W.anim.push(() => { TEX.chev.offset.y = -W.t * 1.5; });
   }
 
   // Start gantry
@@ -1054,7 +1056,21 @@ const ZCOL = {boost: 0x00ffcc, spike: 0xff0033, oil: 0x111118, shock: 0x44aaff, 
 function buildZone(z) {
   const tr = W.tr, g = new THREE.Group(), col = ZCOL[z.t] || 0xffffff;
   z.mesh = g; z.anim = null;
-  if (tr.mode === 'plane') {
+  if (tr.mode === 'plane' && z.t === 'spike') {
+    const R = tr.w / 2, hole = R * (z.mega ? 0.42 : 0.5), outer = R - 0.6, spikes = [];
+    for (let r = hole + 0.8; r <= outer; r += 1.5) {
+      const cnt = Math.max(6, Math.round(6.283 * r / 1.1));
+      for (let k = 0; k < cnt; k++) { const a = (k + Math.random() * 0.5) / cnt * 6.283; spikes.push({x: Math.cos(a) * r, y: Math.sin(a) * r, z: 0.2, sx: 1, sy: 1, sz: rand(0.8, 1.5) * (z.mega ? 1.5 : 1), c: Math.random() < 0.25 ? 0x8a5a3a : 0xa9adb8}); }
+    }
+    const sg = new THREE.ConeGeometry(0.3, 2, 5); sg.rotateX(-Math.PI / 2); sg.translate(0, 0, -1);
+    g.add(inst(sg, new THREE.MeshStandardMaterial({color: 0xffffff, metalness: 0.85, roughness: 0.3, envMap: ENV_MAP}), spikes));
+    const disc = new THREE.Mesh(new THREE.RingGeometry(hole, outer + 0.6, 40, 1), new THREE.MeshStandardMaterial({color: 0x23262d, metalness: 0.8, roughness: 0.4, side: THREE.DoubleSide}));
+    g.add(disc);
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(outer + 0.6, 0.45, 6, 48), new THREE.MeshStandardMaterial({color: 0x555a66, metalness: 0.8, roughness: 0.35})));
+    g.add(new THREE.Mesh(new THREE.TorusGeometry(hole, 0.4, 6, 40), new THREE.MeshBasicMaterial({color: 0x44ff88})));
+    frameAt(z.f, 0, g);
+    z.anim = null;
+  } else if (tr.mode === 'plane') {
     const p = CT.placeAt(tr, z.f, 0, {});
     const s = new THREE.Mesh(new THREE.IcosahedronGeometry(Math.min(z.r, tr.w / 2), 2), new THREE.MeshBasicMaterial({color: z.t === 'oil' ? 0x332244 : col, transparent: true, opacity: 0.28, depthWrite: false, wireframe: false}));
     const w = new THREE.Mesh(new THREE.IcosahedronGeometry(Math.min(z.r, tr.w / 2) * 1.01, 1), new THREE.MeshBasicMaterial({color: z.t === 'oil' ? 0x8844aa : col, wireframe: true, transparent: true, opacity: 0.6}));

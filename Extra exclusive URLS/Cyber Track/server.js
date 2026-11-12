@@ -150,9 +150,29 @@ function trackState(L) {
 }
 
 function later(L, fn, ms) {
-  const t = setTimeout(() => { L.timers.delete(t); if (lobbies.has(L.id)) fn(); }, ms);
-  L.timers.add(t);
-  return t;
+  const h = {ms, at: Date.now(), t: null};
+  h.run = () => { L.timers.delete(h); if (lobbies.has(L.id)) fn(); };
+  L.timers.add(h);
+  if (!L.paused) h.t = setTimeout(h.run, ms);
+  return h;
+}
+function cancel(L, h) { if (h) { clearTimeout(h.t); L.timers.delete(h); } }
+
+function setPaused(L, on) {
+  if (!L.isBot || L.state !== 'racing' || !!L.paused === !!on) return;
+  const now = Date.now();
+  if (on) {
+    L.paused = true; L.pauseAt = now;
+    for (const h of L.timers) { clearTimeout(h.t); h.ms = Math.max(0, h.ms - (now - h.at)); }
+  } else {
+    const d = now - L.pauseAt;
+    L.paused = false; L.lastTick = now;
+    for (const h of L.timers) { h.at = now; h.t = setTimeout(h.run, h.ms); }
+    for (const b of L.movingBarriers) b.startTime += d;
+    for (const g of L.laserGates) g.startTime += d;
+    for (const c of L.cars.values()) if (c.abilityT) c.abilityT += d;
+  }
+  io.to(L.id).emit('paused', {on: !!L.paused});
 }
 
 function gridSlot(L, idx) {
@@ -177,7 +197,7 @@ function mkCar(L, socketId, vehicleId, idx, customData, npc) {
     custom: customData || null,
     hp: c.vs.hp, maxHp: c.vs.hp,
     eliminated: false, elimReason: null,
-    shieldOn: false, hasMissile: false, hasEMP: false, ghostT: 0, jugT: 0,
+    shieldOn: false, inv: {boost: 1, shield: 0, missile: 0, spring: 0, emp: 0}, ghostT: 0, jugT: 0,
     laps: -1, progress: 0, position: 1, pw: 0,
     inp: {u: false, d: false, st: 0},
     wallHitT: 0, nearMissT: 0, stuckT: 0,
@@ -536,17 +556,34 @@ function usePowerup(L, car, type) {
   }
 }
 
+function addItem(car, k) { car.inv[k] = Math.min(5, car.inv[k] + 1); }
+
+function useItem(L, car, k) {
+  if (!car.inv || !(car.inv[k] > 0)) return;
+  if (k === 'shield' && car.shieldOn) return;
+  car.inv[k]--;
+  if (k === 'boost') car.boostT = Math.max(car.boostT, C.BOOST_DUR * 1.5);
+  else if (k === 'shield') { car.shieldOn = true; io.to(L.id).emit('car_hit', {id: car.id, type: 'shield_on'}); }
+  else if (k === 'missile') fireMissile(L, car);
+  else if (k === 'spring') usePowerup(L, car, 'spring');
+  else if (k === 'emp') fireEMP(L, car);
+}
+
 function checkPowerups(L, car) {
   for (const pu of L.powerups) {
     if (!pu.active || !near(L, car, pu, 5)) continue;
     pu.active = false;
     io.to(L.id).emit('powerup_taken', {id: pu.id, carId: car.id, type: pu.type});
     switch (pu.type) {
-      case 'boost':   car.boostT = C.BOOST_DUR * 1.5; break;
+      case 'boost':   if (car.isNPC) car.boostT = C.BOOST_DUR * 1.5; else addItem(car, 'boost'); break;
       case 'repair':  car.hp = Math.min(car.maxHp, car.hp + 35); break;
-      case 'shield':  car.shieldOn = true; break;
-      case 'emp':     car.hasEMP = true; break;
-      case 'missile': car.hasMissile = true; break;
+      case 'shield':  if (car.isNPC) car.shieldOn = true; else addItem(car, 'shield'); break;
+      case 'emp': case 'missile': {
+        addItem(car, pu.type);
+        if (car.isNPC) { const k = pu.type; later(L, () => { if (!car.eliminated) useItem(L, car, k); }, 900 + Math.random() * 2500); }
+        break;
+      }
+      case 'spring':  if (car.isNPC) usePowerup(L, car, 'spring'); else addItem(car, 'spring'); break;
       case 'slow':    car.slowT = 3000; car.speed *= 0.3; break;
       case 'spin':    car.spinT = 2000; break;
       case 'reverse': car.reverseT = 3500; break;
@@ -615,7 +652,7 @@ function barrierPos(L, b, now) {
 function tickLobby(L) {
   const now = Date.now(), dtAll = Math.min((now - L.lastTick) / 1000, 0.1);
   L.lastTick = now;
-  if (L.state !== 'racing') return;
+  if (L.state !== 'racing' || L.paused) return;
   const tr = L.tr;
 
   if (L.noWalls) { L.noWallsT -= dtAll * 1000; if (L.noWallsT <= 0) L.noWalls = false; }
@@ -647,6 +684,7 @@ function tickLobby(L) {
       if (car.eliminated) continue;
       if (car.ghostT > 0) car.ghostT -= dt * 1000;
       if (car.jugT > 0) car.jugT -= dt * 1000;
+      if (!car.isNPC && car.inv.boost === 0) { car.rc = (car.rc || 0) + dt * 1000; if (car.rc >= 10000) { car.rc = 0; car.inv.boost = 1; } } else car.rc = 0;
       if (car.isNPC) npcInput(car, L, dt); else car.k = 1;
       if (car.jugT > 0) car.k *= 1.12;
       CT.stepCar(car, car.inp, dt, tr, env);
@@ -679,13 +717,13 @@ function tickLobby(L) {
       id: c.id, x: r2(c.x), y: r2(c.y), z: r2(c.z), vy: r2(c.vy), a: r2(c.angle), s: r2(c.speed), pit: r2(c.pit),
       hp: Math.round(c.hp * 10) / 10, g: c.onGround ? 1 : 0, p: c.position, st: r2(c.inp.st),
       bT: Math.round(c.boostT), oT: Math.round(c.oilT), sT: Math.round(c.slowT), spT: Math.round(c.spinT), rT: Math.round(c.reverseT),
-      dT: Math.round(c.driftT), dS: c.driftSide, gT: c.ghostT > 0 ? 1 : 0, jT: c.jugT > 0 ? 1 : 0, sh: c.shieldOn ? 1 : 0, mi: c.hasMissile ? 1 : 0, em: c.hasEMP ? 1 : 0, sl: c.slip ? 1 : 0,
+      dT: Math.round(c.driftT), dS: c.driftSide, gT: c.ghostT > 0 ? 1 : 0, jT: c.jugT > 0 ? 1 : 0, sh: c.shieldOn ? 1 : 0, mi: c.inv.missile ? 1 : 0, em: c.inv.emp ? 1 : 0, sl: c.slip ? 1 : 0,
+      iv: c.isNPC ? undefined : [c.inv.boost, c.inv.shield, c.inv.missile, c.inv.spring, c.inv.emp, Math.round((c.rc || 0) / 100)],
     })),
   });
 }
 
 function fireMissile(L, car) {
-  car.hasMissile = false;
   let target = null, minDist = Infinity;
   for (const other of L.cars.values()) {
     if (other.id === car.id || other.eliminated) continue;
@@ -737,7 +775,7 @@ function startVote(L) {
   L.voteOpts = pick3(VOTE_POOL);
   L.votes.clear();
   io.to(L.id).emit('vote_start', {opts: L.voteOpts, dur: C.VOTE_DURATION, final: false});
-  L.voteT = setTimeout(() => resolveVote(L), C.VOTE_DURATION);
+  L.voteT = later(L, () => resolveVote(L), C.VOTE_DURATION);
 }
 
 function startFinishVote(L) {
@@ -746,7 +784,7 @@ function startFinishVote(L) {
   L.voteOpts = [{...FINISH_OPT}, {...FINISH_OPT}, {...FINISH_OPT}];
   L.votes.clear();
   io.to(L.id).emit('vote_start', {opts: L.voteOpts, dur: C.VOTE_DURATION, final: true});
-  L.voteT = setTimeout(() => resolveVote(L), C.VOTE_DURATION);
+  L.voteT = later(L, () => resolveVote(L), C.VOTE_DURATION);
 }
 
 function resolveVote(L) {
@@ -822,7 +860,7 @@ function resolveVote(L) {
 
   io.to(L.id).emit('vote_result', {winner, counts});
   applyEffect(L, winner);
-  if (L.state === 'racing') L.nextVoteT = setTimeout(() => startVote(L), C.VOTE_INTERVAL);
+  if (L.state === 'racing') L.nextVoteT = later(L, () => startVote(L), C.VOTE_INTERVAL);
 }
 
 function setWidth(L, w) { retrack(L, () => { L.w = w; }); }
@@ -1027,8 +1065,8 @@ function addLaserGates(L) {
 }
 
 function stopLobby(L) {
-  clearInterval(L.tickT); clearTimeout(L.voteT); clearTimeout(L.nextVoteT); clearTimeout(L.startT);
-  for (const t of L.timers) clearTimeout(t);
+  clearInterval(L.tickT); clearTimeout(L.startT);
+  for (const h of L.timers) clearTimeout(h.t);
   L.timers.clear();
 }
 
@@ -1052,7 +1090,7 @@ io.on('connection', socket => {
     L = lobby;
     socket.join(L.id);
     const car = mkCar(L, socket.id, vh || 'civic_type_r', L.players.size, customData);
-    car.name = name || 'PLAYER';
+    car.name = String(name || '').replace(/[<>&"']/g, '').trim().slice(0, 16) || 'PLAYER';
     myCarId = car.id;
     L.players.set(socket.id, {name: car.name, vh, carId: car.id, customData});
     return car;
@@ -1069,9 +1107,11 @@ io.on('connection', socket => {
     if (L.players.size >= L.maxPlayers) { clearTimeout(L.startT); waitingLobby = null; beginRace(L); }
   });
 
-  socket.on('bot_race', ({vh, customData, trackType} = {}) => {
+  socket.on('bot_race', ({name, vh, customData, trackType} = {}) => {
     if (L) return;
-    const car = join(mkLobby(10, trackType, false), 'PLAYER', vh, customData);
+    const lob = mkLobby(10, trackType, false);
+    lob.isBot = true;
+    const car = join(lob, name, vh, customData);
     socket.emit('joined', joinedMsg(car));
     beginRace(L);
   });
@@ -1120,25 +1160,24 @@ io.on('connection', socket => {
     car.inp.st = clamp(Number(inp.st) || 0, -1, 1);
   });
 
-  socket.on('boost_ability', () => {
+  socket.on('use_item', ({t} = {}) => {
     const car = myCar();
-    if (!car) return;
-    const now = Date.now();
-    if (car.abilityT && now - car.abilityT < 10000) return;
-    car.abilityT = now;
-    car.boostT = Math.max(car.boostT, 2800);
+    if (car && !L.paused && ['boost', 'shield', 'missile', 'spring', 'emp'].includes(t)) useItem(L, car, t);
   });
 
-  socket.on('fire_missile', () => {
-    const car = myCar();
-    if (car && car.hasMissile) fireMissile(L, car);
-  });
+  socket.on('pause', ({on} = {}) => { if (L) setPaused(L, !!on); });
 
-  socket.on('fire_emp', () => {
-    const car = myCar();
-    if (!car || !car.hasEMP) return;
-    car.hasEMP = false;
-    fireEMP(L, car);
+  socket.on('voice_join', () => {
+    if (!L) return;
+    if (!L.voice) L.voice = new Set();
+    socket.emit('voice_peers', {peers: [...L.voice].filter(id => id !== socket.id)});
+    L.voice.add(socket.id);
+  });
+  socket.on('voice_leave', () => {
+    if (L && L.voice && L.voice.delete(socket.id)) io.to(L.id).emit('voice_gone', {id: socket.id});
+  });
+  socket.on('voice_signal', ({to, data} = {}) => {
+    if (L && L.voice && L.voice.has(socket.id) && L.voice.has(to)) io.to(to).emit('voice_signal', {from: socket.id, name: (L.players.get(socket.id) || {}).name, data});
   });
 
   socket.on('vote', ({optId} = {}) => {
@@ -1155,6 +1194,7 @@ io.on('connection', socket => {
   socket.on('disconnect', () => {
     console.log('[-]', socket.id);
     if (!L) return;
+    if (L.voice && L.voice.delete(socket.id)) io.to(L.id).emit('voice_gone', {id: socket.id});
     L.players.delete(socket.id);
     const car = L.cars.get(myCarId);
     if (L.state === 'waiting') {
@@ -1193,7 +1233,7 @@ function beginRace(L) {
   });
   spawnPowerups(L);
   L.tickT = setInterval(() => tickLobby(L), C.TICK_MS);
-  L.nextVoteT = setTimeout(() => startVote(L), C.VOTE_INTERVAL);
+  L.nextVoteT = later(L, () => startVote(L), C.VOTE_INTERVAL);
 }
 
 const PORT = process.env.PORT || 8080;

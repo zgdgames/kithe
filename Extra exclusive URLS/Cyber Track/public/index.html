@@ -25,9 +25,12 @@
       <span class="logo-track">TRACK</span>
     </div>
     <div class="tagline">LAST CAR STANDING · VOTE THE TRACK · UP TO 30 RACERS</div>
-    <button id="btn-start" class="btn-big" onclick="goToGarage()">▶ START</button>
+    <input id="name-input" class="name-input" type="text" maxlength="16" placeholder="ENTER PLAYER NAME" autocomplete="off" spellcheck="false">
+    <div id="name-error" class="name-error"></div>
+    <button id="btn-start" class="btn-big" onclick="startGame()">▶ START</button>
+    <button class="btn-icon" onclick="openSettings()">⚙ SETTINGS</button>
     <div class="home-stats">WINS: <span id="home-wins">0</span></div>
-    <div class="home-creds">[ WASD or ARROWS · 30s VOTE INTERVALS · LAST CAR WINS ]</div>
+    <div class="home-creds" id="home-creds"></div>
   </div>
 </div>
 
@@ -119,6 +122,29 @@
   </div>
 </div>
 
+<!-- ── PAUSE ── -->
+<div id="pause-menu" class="popup-overlay hidden">
+  <div class="popup-box">
+    <div class="popup-title" id="pause-title">PAUSED</div>
+    <div>
+      <button class="btn-big" onclick="togglePause()">▶ RESUME</button>
+      <button class="btn-big btn-bot" onclick="openSettings()">⚙ SETTINGS</button>
+      <button class="btn-big btn-friends" onclick="exitRace()">✕ EXIT RACE</button>
+      <div class="fp-label dim" id="pause-hint"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── SETTINGS ── -->
+<div id="settings-popup" class="popup-overlay hidden">
+  <div class="popup-box wide">
+    <div class="popup-title">SETTINGS</div>
+    <div id="settings-list"></div>
+    <div class="fp-label dim" id="settings-controls"></div>
+    <div><button class="btn-icon popup-close" onclick="closeSettings()">✕ CLOSE</button></div>
+  </div>
+</div>
+
 <div id="cutscene-fade"></div>
 
 <!-- ── LOBBY ── -->
@@ -152,9 +178,11 @@
     <button class="btn-icon hud-return-btn" onclick="returnToGarage()">◀ GARAGE</button>
   </div>
   <div class="hud-effect" id="hud-effect"></div>
-  <button id="mobile-boost-btn" class="mobile-boost" onclick="triggerBoostAbility()">⚡</button>
-  <div class="controls-hint" id="controls-hint">W/S or ↑↓ DRIVE  ·  A/D or ←→ STEER  ·  SPACE BOOST</div>
-  <div id="spectate-banner" class="hidden">SPECTATING — YOU WERE ELIMINATED  ·  [ ] CYCLE CAMERA</div>
+  <div class="hud-inv" id="hud-inv"></div>
+  <div class="voice-ind hidden" id="voice-ind"></div>
+  <button id="mobile-boost-btn" class="mobile-boost" onclick="useItem('boost')">⚡</button>
+  <div class="controls-hint" id="controls-hint"></div>
+  <div id="spectate-banner" class="hidden"></div>
   <div id="minimap"><canvas id="minimap-canvas" width="150" height="150"></canvas></div>
 </div>
 
@@ -188,5 +216,6 @@
 <script src="js/world.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/game.js"></script>
+<script src="js/ui.js"></script>
 </body>
 </html>

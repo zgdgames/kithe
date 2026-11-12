@@ -102,13 +102,15 @@ function ensureSocket() {
   return socket;
 }
 function dropSocket() {
+  voiceCleanup(); simPaused = false; pauseOpen = false; $('pause-menu').classList.add('hidden');
   if (socket) { socket.disconnect(); socket = null; }
 }
 function emitWhenReady(ev, data) {
   const s = ensureSocket();
   if (s.connected) s.emit(ev, data); else s.once('connect', () => s.emit(ev, data));
 }
-const playerName = () => 'PLAYER_' + (Math.random() * 9999 | 0);
+const playerName = () => (localStorage.getItem('ct_name') || '').trim().slice(0, 16);
+let isBotRace = false, simPaused = false, pauseOpen = false, myInv = [1, 0, 0, 0, 0, 0];
 
 // ═══════════════════════════════════════════════════════════════════════
 // NAVIGATION
@@ -132,7 +134,7 @@ window.returnToGarage = window.goToGarage;
 window.leaveLobby = window.goToHome;
 
 window.goToCutscene = function () {
-  gamePhase = 'cutscene';
+  gamePhase = 'cutscene'; isBotRace = false;
   ensureSocket();
   startCutscene(() => {
     emitWhenReady('find_match', {name: playerName(), vh: custom.vehicle, customData: custom, trackType: selectedTrackType >= 0 ? selectedTrackType : undefined});
@@ -143,10 +145,10 @@ window.goToCutscene = function () {
 };
 
 window.startBotRace = function () {
-  gamePhase = 'cutscene';
+  gamePhase = 'cutscene'; isBotRace = true;
   ensureSocket();
   startCutscene(() => {
-    emitWhenReady('bot_race', {vh: custom.vehicle, customData: custom, trackType: selectedTrackType >= 0 ? selectedTrackType : undefined});
+    emitWhenReady('bot_race', {name: playerName(), vh: custom.vehicle, customData: custom, trackType: selectedTrackType >= 0 ? selectedTrackType : undefined});
     showScreen('lobby');
     $('lobby-title').textContent = 'LOADING BOT RACE';
     gamePhase = 'lobby';
@@ -564,63 +566,37 @@ function setupInput() {
   document.addEventListener('click', e => { if (e.target.closest && e.target.closest('button,.opt-btn,.ctab,.track-btn,.vh-slot,.paint-chip,.fp-key,.vote-btn')) Snd.sfx('click'); });
   document.addEventListener('keydown', e => {
     Snd.init();
-    if (e.code === 'KeyP' && !e.repeat && (gamePhase === 'race' || gamePhase === 'spectate')) { fpvOn = !fpvOn; camInit = false; flash(fpvOn ? '👁 FIRST PERSON' : '🎥 THIRD PERSON', '#00ffcc', 1200); }
+    setDevice('kb');
+    if (e.target && e.target.tagName === 'INPUT') { if (e.code === 'Enter') { e.target.blur(); startGame(); } return; }
+    if (e.code === 'Escape' && !e.repeat) { e.preventDefault(); escapeKey(); return; }
+    if (e.code === 'KeyP' && !e.repeat) toggleFpv();
     if (e.code === 'KeyM' && !e.repeat) flash(Snd.toggle() ? '🔇 SOUND OFF' : '🔊 SOUND ON', '#00ffcc', 1200);
+    if (e.code === 'KeyV' && !e.repeat) toggleMic();
     const racing = gamePhase === 'race' || gamePhase === 'spectate';
     if (set(e, true) && racing) e.preventDefault();
-    if (e.code === 'Space' && gamePhase === 'race') { if (!e.repeat) triggerBoostAbility(); e.preventDefault(); }
+    if (gamePhase === 'race' && !pauseOpen) {
+      const item = e.code === 'Space' ? 'boost' : (e.code === 'ShiftLeft' || e.code === 'ShiftRight') ? 'missile' : (e.code === 'Enter' || e.code === 'NumpadEnter') ? 'shield' : e.code === 'KeyE' ? 'spring' : null;
+      if (item) { if (!e.repeat) useItem(item); e.preventDefault(); }
+      if (!e.repeat && (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3')) voteSlot(+e.code.slice(5) - 1);
+    }
     if ((e.code === 'BracketLeft' || e.code === 'BracketRight' || e.code === 'Tab') && gamePhase === 'spectate') {
       e.preventDefault();
       cycleSpecTarget(e.code === 'BracketLeft' ? -1 : 1);
     }
   });
   document.addEventListener('keyup', e => set(e, false));
+  document.addEventListener('mousemove', e => { if (e.movementX || e.movementY) setDevice('kb'); });
   window.addEventListener('blur', () => { K.u = K.d = K.l = K.r = false; inputDirty = true; });
 }
 
-window.triggerBoostAbility = function () {
-  if (gamePhase !== 'race' || !me) return;
-  if (me.hasMissile) {
-    socket.emit('fire_missile'); me.hasMissile = false; Snd.sfx('missile');
-    flash('🚀 MISSILE FIRED!', '#ff3300', 2000);
-  } else if (me.hasEMP) {
-    socket.emit('fire_emp'); me.hasEMP = false; Snd.sfx('emp');
-    flash('📡 EMP FIRED!', '#4488ff', 2000);
-  } else if (boostAbilityCooldown <= 0) {
-    boostAbilityCooldown = BOOST_ABILITY_DUR + BOOST_ABILITY_CD;
-    Snd.sfx('boost');
-    socket.emit('boost_ability');
-    me.boostT = Math.max(me.boostT, BOOST_ABILITY_DUR);
-    boostGlowT = 1.5;
-  }
-};
-
-function pollGamepad() {
-  const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-  let pad = null;
-  for (const p of pads) if (p && p.connected) { pad = p; break; }
-  if (!pad) { padSteer = 0; return; }
-  const dead = 0.18, ax = i => Math.abs(pad.axes[i] || 0) > dead ? pad.axes[i] : 0;
-  const lx = ax(0), ly = ax(1);
-  const bt = i => pad.buttons[i] && pad.buttons[i].pressed;
-  const u = ly < -dead || bt(7) || bt(0), d = ly > dead || bt(6);
-  if (pad._ct !== undefined || lx || ly || u || d) {
-    if (K.pu !== u || K.pd !== d || Math.abs(padSteer + lx) > 0.02) inputDirty = true;
-    K.pu = u; K.pd = d; padSteer = -lx;
-  }
-  gpCamYaw = lerp(gpCamYaw, ax(2) * 1.2, 0.15);
-  gpCamPitch = lerp(gpCamPitch, ax(3) * 2.5, 0.15);
-  const b = !!bt(1);
-  if (b && !padBoostHeld) triggerBoostAbility();
-  padBoostHeld = b;
-  if (gamePhase === 'spectate') {
-    if (bt(5) && !pad._r) cycleSpecTarget(1);
-    if (bt(4) && !pad._l) cycleSpecTarget(-1);
-  }
-  pad._r = bt(5); pad._l = bt(4);
+function toggleFpv() {
+  if (gamePhase !== 'race' && gamePhase !== 'spectate') return;
+  fpvOn = !fpvOn; camInit = false;
+  flash(fpvOn ? '👁 FIRST PERSON' : '🎥 THIRD PERSON', '#00ffcc', 1200);
 }
 
 function currentInput() {
+  if (pauseOpen) return {u: false, d: false, st: 0};
   const st = clampN((K.l ? 1 : 0) - (K.r ? 1 : 0) + padSteer, -1, 1);
   return {u: K.u || !!K.pu, d: K.d || !!K.pd, st};
 }
@@ -978,7 +954,6 @@ function updateRace(dt, ts) {
   if (PS.pts.parent !== raceScene) attachParticles(raceScene);
   if (!W.tr) return;
   raceT += dt; W.t = raceT;
-  pollGamepad();
   const inp = currentInput();
   sendInput(inp);
   stepMe(inp, dt);
@@ -1014,6 +989,8 @@ function frame(ts) {
   const dt = Math.min((ts - _last) / 1000, 0.1);
   _last = ts;
   if (dt <= 0) return;
+  pollGamepad(dt);
+  if (simPaused) { Snd.engine(null); Snd.rival(null); Snd.drive(null); renderer.render(raceScene, raceCam); return; }
   if (gamePhase === 'race' || gamePhase === 'spectate' || gamePhase === 'over') updateRace(dt, ts);
   else { updateGarage(dt, ts); Snd.engine(null); Snd.rival(null); Snd.drive(null); Snd.setTrack('menu'); }
 }
@@ -1048,7 +1025,6 @@ function drawMinimap() {
   if (m && !m.dead) { g.beginPath(); g.arc(X(m.x), Z(m.z), 4.2, 0, 6.3); g.fillStyle = '#00ffcc'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1; g.stroke(); }
 }
 
-let hudBoostWas = false;
 function updateHUD() {
   const c = cars[gamePhase === 'race' ? myCarId : specTarget];
   if (!c) return;
@@ -1058,17 +1034,7 @@ function updateHUD() {
   $('hud-speed').innerHTML = Math.abs(Math.round(c.speed * 2.5)) + ' <span>km/h</span>';
   const al = $('hud-alive'); al.textContent = aliveN + ' ALIVE'; al.style.color = aliveN <= 3 ? '#ff0044' : aliveN <= 5 ? '#ffaa00' : '#ff6600';
   $('hud-position').textContent = `P ${c.pos || myPos} / ${aliveN}`;
-  if (gamePhase !== 'race' || !me) return;
-  const ef = $('hud-effect'), idle = ef.textContent === '' || ef.dataset.auto === '1';
-  if (!idle) { ef.dataset.auto = ''; return; }
-  const ready = boostAbilityCooldown <= 0;
-  if (me.hasMissile) { ef.textContent = '🚀 MISSILE READY — SPACE'; ef.style.color = '#ff5533'; ef.dataset.auto = '1'; }
-  else if (me.hasEMP) { ef.textContent = '📡 EMP READY — SPACE'; ef.style.color = '#66aaff'; ef.dataset.auto = '1'; }
-  else if (me.boostT > 0) { ef.textContent = '⚡ BOOST'; ef.style.color = '#00ffcc'; ef.dataset.auto = '1'; }
-  else if (!ready) { ef.textContent = `BOOST ${Math.ceil(boostAbilityCooldown / 1000)}s`; ef.style.color = '#ff8800'; ef.dataset.auto = '1'; }
-  else if (!hudBoostWas) { ef.dataset.auto = ''; flash('[ SPACE ] BOOST READY', '#448877', 1800); }
-  else if (ef.dataset.auto === '1') { ef.textContent = ''; ef.dataset.auto = ''; }
-  hudBoostWas = ready;
+  updateInvHUD();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1119,7 +1085,7 @@ function showVote(opts, dur, isFinal) {
   let t = Math.ceil(dur / 1000);
   $('vote-timer').textContent = t;
   clearInterval(voteIntervalId);
-  voteIntervalId = setInterval(() => { t--; $('vote-timer').textContent = Math.max(0, t); if (t <= -3) hideVote(); }, 1000);
+  voteIntervalId = setInterval(() => { if (simPaused) return; t--; $('vote-timer').textContent = Math.max(0, t); if (t <= -3) hideVote(); }, 1000);
 }
 function castVote(realId, slotId) {
   if (myVote || gamePhase !== 'race') return;
@@ -1187,11 +1153,12 @@ function applyTrack(st, first) {
   for (const c of Object.values(cars)) c.wi = -1;
   if (me) { me.wi = -1; me.gy = null; }
   Snd.setTrack(W.tr.style);
-  const hint = $('controls-hint');
-  hint.textContent = W.tr.mode === 'plane' ? 'W/S or ↑↓ CLIMB / DIVE  ·  A/D or ←→ TURN  ·  SPACE BOOST  ·  P CAMERA  ·  M SOUND' : 'W/S or ↑↓ DRIVE  ·  A/D or ←→ STEER  ·  SPACE BOOST  ·  P CAMERA  ·  M SOUND';
+  updateHints();
 }
 
 function setupSocket(s) {
+  setupVoiceSocket(s);
+  s.on('paused', ({on}) => setSimPaused(on));
   s.on('lobby_tick', ({remain}) => { if (gamePhase === 'lobby') startLobbyTimer(remain); });
   s.on('lobby_update', ({count, max, players}) => updateLobbyPlayers(players, count, max));
 
@@ -1224,11 +1191,13 @@ function setupSocket(s) {
       const rec = addCar(c);
       if (c.id === myCarId) {
         me = CT.newCar(c.vh);
-        Object.assign(me, {x: c.x, y: c.y, z: c.z, angle: c.angle, onGround: W.tr.mode !== 'plane', hasMissile: false, hasEMP: false});
+        Object.assign(me, {x: c.x, y: c.y, z: c.z, angle: c.angle, onGround: W.tr.mode !== 'plane', });
         rec.maxHp = c.maxHp;
       }
     }
-    aliveN = list.length; myPos = 1; specTarget = null; camInit = false; boostAbilityCooldown = 0; hudBoostWas = true;
+    aliveN = list.length; myPos = 1; specTarget = null; camInit = false; myInv = [1, 0, 0, 0, 0, 0];
+    $('spectate-banner').classList.add('hidden');
+    updateHints(); voiceStart();
     showScreen('race');
     if (trackName) flash('▶ ' + trackName, '#00ffcc', 3000);
   });
@@ -1243,7 +1212,7 @@ function setupSocket(s) {
       if (!c || c.dead) continue;
       if (c.mine && sv.hp < c.hp - 0.5) { Snd.sfx('hit'); dmgFlashT = Math.max(dmgFlashT, 0.25); shakeT = Math.max(shakeT, 0.15); }
       c.hp = sv.hp; c.pos = sv.p; c.shield = !!sv.sh; c.ghost = !!sv.gT; c.jug = !!sv.jT;
-      if (c.mine) myPos = sv.p;
+      if (c.mine) { myPos = sv.p; if (sv.iv) myInv = sv.iv; }
       if (c.mine && gamePhase === 'race') reconcile(sv);
       else { c.sv = sv; c.boostT = sv.bT; c.driftT = sv.dT; c.driftSide = sv.dS; c.onGround = !!sv.g; }
     }
@@ -1274,11 +1243,10 @@ function setupSocket(s) {
     const pu = W.powerups.find(p => p.id === id);
     if (pu) { pu.active = false; if (pu.mesh) { pu.mesh.visible = false; explode(pu.mesh.position.x, pu.mesh.position.y - 0.5, pu.mesh.position.z, PU_COLORS[type] || 0xffffff, 16, 7); } }
     if (carId === myCarId) {
-      const snd = {boost: 'boost', repair: 'repair', shield: 'shield', ghost: 'ghost', juggernaut: 'jugger', swap: 'swap', scrambler: 'scramble', warp: 'warp', lightning: 'pickup', leech: 'leech', cryo: 'cryo', spring: 'spring', spike_p: 'hit', oil_p: 'zone', slow: 'zone', spin: 'zone', reverse: 'scramble'};
+      const snd = {repair: 'repair', ghost: 'ghost', juggernaut: 'jugger', swap: 'swap', scrambler: 'scramble', warp: 'warp', lightning: 'pickup', leech: 'leech', cryo: 'cryo', spike_p: 'hit', oil_p: 'zone', slow: 'zone', spin: 'zone', reverse: 'scramble'};
       Snd.sfx(snd[type] || 'pickup');
-      const labels = {boost: '⚡ BOOST!', repair: '❤ REPAIRED', slow: '⚠ SLOWED', spin: '↺ SPINNING', reverse: '⇄ REVERSED', spike_p: '💥 SPIKED', oil_p: '⚠ OIL', shield: '🛡 SHIELD', emp: '📡 EMP READY', missile: '🚀 MISSILE READY', ghost: '👻 PHASE SHIFT', spring: '⤴ SPRING JUMP', juggernaut: '🛡 JUGGERNAUT', warp: '🌀 WARP DASH', swap: '🔀 POSITION SWAP', cryo: '❄ CRYO BLAST', lightning: '⚡ THUNDER STRIKE', leech: '🧛 LIFE LEECH', scrambler: '📻 SCRAMBLER'};
+      const labels = {boost: '⚡ +1 BOOST', repair: '❤ REPAIRED', slow: '⚠ SLOWED', spin: '↺ SPINNING', reverse: '⇄ REVERSED', spike_p: '💥 SPIKED', oil_p: '⚠ OIL', shield: '🛡 +1 SHIELD', emp: '📡 +1 EMP', missile: '🚀 +1 MISSILE', spring: '🦘 +1 SPRING JUMP', ghost: '👻 PHASE SHIFT', spring: '⤴ SPRING JUMP', juggernaut: '🛡 JUGGERNAUT', warp: '🌀 WARP DASH', swap: '🔀 POSITION SWAP', cryo: '❄ CRYO BLAST', lightning: '⚡ THUNDER STRIKE', leech: '🧛 LIFE LEECH', scrambler: '📻 SCRAMBLER'};
       flash(labels[type] || type, type === 'boost' ? '#00ffcc' : type === 'repair' ? '#44ff44' : '#ff8800', 2000);
-      if (type === 'boost') boostGlowT = 0.8;
       if (type === 'spike_p') dmgFlashT = 0.4;
     }
   });
@@ -1356,7 +1324,7 @@ function setupSocket(s) {
     const c = carAt(id);
     if (!c) return;
     if (type === 'missile') { explode(c.x, c.y, c.z, 0xff5500, 55, 18); Snd.sfx('explode'); Snd.sfx('crashbig'); }
-    if (type === 'cryo') Snd.sfx('cryo'); if (type === 'lightning') Snd.sfx('lightning'); if (type === 'leech_gain') Snd.sfx('leech'); if (type === 'spring') Snd.sfx('spring'); if (type === 'shield_block') Snd.sfx('shield');
+    if (type === 'cryo') Snd.sfx('cryo'); if (type === 'lightning') Snd.sfx('lightning'); if (type === 'leech_gain') Snd.sfx('leech'); if (type === 'spring') Snd.sfx('spring'); if (type === 'shield_block' || type === 'shield_on') Snd.sfx('shield');
     if (type === 'emp') explode(c.x, c.y, c.z, 0x44ccff, 30, 10);
     if (type === 'spikehit') { explode(c.x, c.y, c.z, 0xff3355, 26, 11); Snd.sfx('crash'); }
     if (type === 'spring') { explode(c.x, c.y, c.z, 0xffee44, 26, 12); shockRing(c.x, c.y + 0.3, c.z, 0xffee44, 7, true); if (id === myCarId && me) { me.vy = 24; me.onGround = false; me.gy = null; } }
@@ -1367,7 +1335,7 @@ function setupSocket(s) {
     if (type === 'scramble') explode(c.x, c.y + 0.8, c.z, 0xff44aa, 30, 10);
     if (type === 'swap') explode(c.x, c.y + 0.6, c.z, 0xffaa00, 28, 10);
     if (type === 'shield_block') { explode(c.x, c.y, c.z, 0x0088ff, 30, 10); shockRing(c.x, c.y + 1, c.z, 0x0088ff, 6, true); }
-    if (id === myCarId && type !== 'spring' && type !== 'leech_gain') { dmgFlashT = 0.5; shakeT = 0.4; }
+    if (id === myCarId && type !== 'spring' && type !== 'leech_gain' && type !== 'shield_on') { dmgFlashT = 0.5; shakeT = 0.4; }
   });
   s.on('warp', ({id, x, y, z, a}) => {
     const c = carAt(id);

@@ -243,3 +243,4 @@ body.split .hud-return-btn,body.split #minimap{display:none;}
 body.split .hud-inv{gap:5px;}
 body.split .inv-slot{width:58px;}
 body.split .controls-hint{display:none;}
+body.split .lobby-timer-ring,body.split .lobby-count,body.split .lobby-list,body.split .lobby-hint{display:none;}

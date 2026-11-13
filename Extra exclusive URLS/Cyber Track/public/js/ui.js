@@ -187,6 +187,16 @@ function focusables(root) {
   if (!root) return [];
   return [...root.querySelectorAll('button, .opt-btn, .track-btn, .vh-slot, .paint-chip, input')].filter(e => e.offsetParent !== null && !e.disabled);
 }
+function shownRect(e) {
+  const r = e.getBoundingClientRect();
+  let l = r.left, t = r.top, rt = r.right, b = r.bottom;
+  for (let p = e.parentElement; p && p !== document.body; p = p.parentElement) {
+    if (getComputedStyle(p).overflow === 'visible') continue;
+    const c = p.getBoundingClientRect();
+    l = Math.max(l, c.left); t = Math.max(t, c.top); rt = Math.min(rt, c.right); b = Math.min(b, c.bottom);
+  }
+  return {left: l, top: t, right: rt, bottom: b};
+}
 function centre(e) { const r = e.getBoundingClientRect(); return {x: r.left + r.width / 2, y: r.top + r.height / 2}; }
 function setPadFocus(e) {
   document.querySelectorAll('.pad-focus').forEach(x => x.classList.remove('pad-focus'));
@@ -209,21 +219,21 @@ function resolvePadFocus(root) {
 }
 function movePadFocus(list, dx, dy) {
   if (!padFocusEl) return;
-  const a = centre(padFocusEl), ra = padFocusEl.getBoundingClientRect();
+  const a = centre(padFocusEl), ra = shownRect(padFocusEl);
   let best = null, bs = Infinity, lined = null, ls = Infinity;
   for (const e of list) {
     if (e === padFocusEl) continue;
-    const c = centre(e), r = e.getBoundingClientRect(), ox = c.x - a.x, oy = c.y - a.y;
+    const c = centre(e), r = shownRect(e), ox = c.x - a.x, oy = c.y - a.y;
     const along = ox * dx + oy * dy, across = Math.abs(ox * dy) + Math.abs(oy * dx);
     if (along < 6) continue;
     const overlap = dx ? Math.min(r.bottom, ra.bottom) - Math.max(r.top, ra.top) : Math.min(r.right, ra.right) - Math.max(r.left, ra.left);
-    if (overlap > 4) { if (along < ls) { ls = along; lined = e; } continue; }
+    if (overlap > 4 && r.right > r.left && r.bottom > r.top) { if (along < ls) { ls = along; lined = e; } continue; }
     if (across > along * 1.6) continue;
     const sc = along + across * 2.4;
     if (sc < bs) { bs = sc; best = e; }
   }
   best = lined || best;
-  if (!best && dx) best = list[list.indexOf(padFocusEl) + dx] || null;
+  if (!best && dx) { const n = list[list.indexOf(padFocusEl) + dx]; if (n && n.parentElement === padFocusEl.parentElement) best = n; }
   if (best) { setPadFocus(best); Snd.sfx('click', 0.4); }
 }
 function scrollTarget(root) {
@@ -612,6 +622,7 @@ window.startSplit = function () {
   splitFrames = [0, 1].map(p => {
     const f = document.createElement('iframe');
     f.allow = 'gamepad; microphone; autoplay';
+    if (splitPick[p] !== 'kb') f.style.pointerEvents = 'none';
     f.src = `${window.CT_FRAME || '/?'}sp=${p + 1}&dev=${splitPick[p]}&room=${room}`;
     view.appendChild(f);
     return f;
@@ -650,16 +661,23 @@ function splitGarageUI() {
   $('garage-header-left').innerHTML = `<button class="btn-icon" onclick="parent.closeSplit()">✕ EXIT 2 PLAYERS</button>`;
   $('garage-header-right').innerHTML = `<div class="wins-pill">${SPLIT.dev === 'kb' ? 'KEYBOARD' : 'CONTROLLER ' + (+SPLIT.dev.slice(3) + 1)}</div>`;
   $('garage-btn-row').innerHTML = `<button class="btn-big" onclick="splitReady()">READY ▶</button>`;
-  if (SPLIT.p === 2) { const t = [...document.querySelectorAll('#garage-tabs .ctab')].find(b => b.textContent === 'TRACK'); if (t) t.remove(); }
 }
 window.splitReady = function () {
   gamePhase = 'lobby'; isBotRace = false;
   showScreen('lobby');
   $('lobby-title').textContent = 'WAITING FOR PLAYER ' + (3 - SPLIT.p);
   const base = {name: splitName(), vh: custom.vehicle, customData: custom};
-  if (SPLIT.p === 1) emitWhenReady('create_private', Object.assign(base, {mode: '10', code: splitRoom(), trackType: selectedTrackType >= 0 ? selectedTrackType : undefined}));
+  if (SPLIT.p === 1) emitWhenReady('create_private', Object.assign(base, {mode: '10', code: splitRoom()}));
   else emitWhenReady('join_private', Object.assign(base, {code: splitRoom()}));
-  if (SPLIT.p === 1) socket.on('lobby_update', ({count}) => { if (count >= 2 && gamePhase === 'lobby') socket.emit('private_start'); });
+  if (SPLIT.p === 1) {
+    const s = socket;
+    let asked = false;
+    s.on('lobby_update', ({count}) => {
+      if (count < 2 || gamePhase !== 'lobby' || asked) return;
+      asked = true;
+      openTrackSelect('split', () => { s.emit('track_vote', {trackType: selectedTrackType >= 0 ? selectedTrackType : undefined}); s.emit('private_start'); });
+    });
+  }
 };
 function splitJoinRetry() {
   dropSocket();

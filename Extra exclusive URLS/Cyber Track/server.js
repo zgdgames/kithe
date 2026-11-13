@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ── CONFIG ───────────────────────────────────────────────────────────
 const C = {
-  MAX_PLAYERS:     30,
+  MAX_PLAYERS:     10,
   LOBBY_TIMEOUT:   120_000,
   TICK_MS:         50,
   SUBSTEPS:        2,
@@ -118,6 +118,7 @@ function mkLobby(maxP, trackType, isPrivate, customCode) {
   const type = validType(trackType) ? trackType : Math.floor(Math.random() * TRACKS.length);
   const g = CT.genTrack(type);
   const L = {
+    trackVotes: new Map(),
     id: customCode || Math.random().toString(36).slice(2, 7).toUpperCase(),
     state: 'waiting',
     maxPlayers: maxP || C.MAX_PLAYERS,
@@ -140,6 +141,21 @@ function mkLobby(maxP, trackType, isPrivate, customCode) {
   L.tr = CT.buildTrack(trackState(L));
   lobbies.set(L.id, L);
   return L;
+}
+
+// The track with the most votes is raced; ties are broken at random.
+function settleTrack(L) {
+  if (!L.trackVotes.size) return;
+  const n = new Map();
+  for (const t of L.trackVotes.values()) n.set(t, (n.get(t) || 0) + 1);
+  const top = Math.max(...n.values()), best = [...n.keys()].filter(t => n.get(t) === top);
+  const type = best[Math.floor(Math.random() * best.length)];
+  if (type === L.type) return;
+  const g = CT.genTrack(type);
+  L.type = type; L.cp = g.cp; L.ramps = g.ramps; L.w = g.w;
+  L.tr = CT.buildTrack(trackState(L));
+  let i = 0;
+  for (const car of L.cars.values()) seatCar(L, car, i++);
 }
 
 function trackState(L) {
@@ -1116,12 +1132,14 @@ io.on('connection', socket => {
     L.players.set(socket.id, {name: car.name, vh, carId: car.id, customData});
     return car;
   }
+  function voteTrack(t) { if (!L || L.state !== 'waiting') return; if (validType(t)) L.trackVotes.set(socket.id, t); else L.trackVotes.delete(socket.id); }
   const joinedMsg = car => ({carId: car.id, st: trackState(L), lobbyId: L.id, trackName: TRACKS[L.type].name, remain: Math.max(0, C.LOBBY_TIMEOUT - (Date.now() - L.created))});
 
   socket.on('find_match', ({name, vh, customData, trackType} = {}) => {
     if (L) return;
-    if (!waitingLobby) waitingLobby = mkLobby(undefined, trackType);
+    if (!waitingLobby) waitingLobby = mkLobby();
     const car = join(waitingLobby, name, vh, customData);
+    voteTrack(trackType);
     socket.emit('joined', joinedMsg(car));
     io.to(L.id).emit('lobby_update', lobbyInfo(L));
     if (L.players.size === 1) { const lob = L; L.startT = setTimeout(() => beginRace(lob), C.LOBBY_TIMEOUT); }
@@ -1139,26 +1157,30 @@ io.on('connection', socket => {
 
   socket.on('create_private', ({name, vh, customData, mode, code, trackType} = {}) => {
     if (L) return;
-    const maxP = mode === '1v1' ? 2 : mode === 'team' ? 6 : mode === '10' ? 10 : mode === '20' ? 20 : 30;
+    const maxP = mode === '1v1' ? 2 : mode === 'team' ? 6 : 10;
     const customCode = code ? String(code).toUpperCase().slice(0, 5) : null;
     if (customCode && lobbies.has(customCode)) {
       socket.emit('join_error', {msg: 'Code already in use. Choose another.'});
       return;
     }
-    const car = join(mkLobby(maxP, trackType, true, customCode), name, vh, customData);
+    const car = join(mkLobby(maxP, undefined, true, customCode), name, vh, customData);
+    voteTrack(trackType);
     socket.emit('private_created', {code: L.id, carId: car.id, st: trackState(L), trackName: TRACKS[L.type].name});
     io.to(L.id).emit('lobby_update', lobbyInfo(L));
   });
 
-  socket.on('join_private', ({code, name, vh, customData} = {}) => {
+  socket.on('join_private', ({code, name, vh, customData, trackType} = {}) => {
     if (L) return;
     const privL = lobbies.get(String(code || '').toUpperCase());
     if (!privL || privL.state !== 'waiting' || !privL.isPrivate) { socket.emit('join_error', {msg: 'Lobby not found or already started'}); return; }
     const car = join(privL, name, vh, customData);
+    voteTrack(trackType);
     socket.emit('joined', joinedMsg(car));
     io.to(L.id).emit('lobby_update', lobbyInfo(L));
     if (L.players.size >= L.maxPlayers) beginRace(L);
   });
+
+  socket.on('track_vote', ({trackType} = {}) => voteTrack(trackType));
 
   socket.on('private_start', () => {
     if (L && L.isPrivate && L.state === 'waiting') beginRace(L);
@@ -1217,6 +1239,7 @@ io.on('connection', socket => {
     if (!L) return;
     if (L.voice && L.voice.delete(socket.id)) io.to(L.id).emit('voice_gone', {id: socket.id});
     L.players.delete(socket.id);
+    L.trackVotes.delete(socket.id);
     const car = L.cars.get(myCarId);
     if (L.state === 'waiting') {
       if (car) { L.cars.delete(car.id); L.alive.delete(car.id); }
@@ -1241,6 +1264,7 @@ function beginRace(L) {
   L.state = 'racing';
   if (L === waitingLobby) waitingLobby = null;
   clearTimeout(L.startT);
+  settleTrack(L);
   fillNPCs(L);
   L.lastTick = Date.now();
   io.to(L.id).emit('race_start', {

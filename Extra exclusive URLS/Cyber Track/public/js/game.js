@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════════════
 let wins = parseInt(localStorage.getItem('ct_wins') || '0') || 0;
 const SPLIT = (() => { const q = new URLSearchParams(location.search || location.hash.slice(1)), sp = +q.get('sp'); return sp ? {p: sp, dev: q.get('dev') || 'kb', room: q.get('room') || 'LOCAL', n: 0} : null; })();
-const CUSTOM_KEY = SPLIT && SPLIT.p === 2 ? 'ct_custom_p2' : 'ct_custom';
+const CUSTOM_KEY = SPLIT ? (SPLIT.p === 2 ? 'ct_custom_p2' : 'ct_custom_p1') : 'ct_custom';
 let custom;
 try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || localStorage.getItem('ct_custom') || 'null') || {}; }
 catch (e) { custom = {}; }
@@ -151,8 +151,6 @@ window.startBotRace = function () {
   ensureSocket();
   startCutscene(() => {
     emitWhenReady('bot_race', {name: playerName(), vh: custom.vehicle, customData: custom, trackType: selectedTrackType >= 0 ? selectedTrackType : undefined});
-    showScreen('lobby');
-    $('lobby-title').textContent = 'LOADING BOT RACE';
     gamePhase = 'lobby';
   });
 };
@@ -166,18 +164,24 @@ function trackButton(i, onPick) {
   return btn;
 }
 
-window.openTrackSelect = function (mode) {
-  _trackSelectMode = mode;
+let _trackPending = null;
+window.openTrackSelect = function (mode, then) {
+  _trackSelectMode = mode; _trackPending = then || null;
+  const vote = mode === 'race' || mode === 'friends';
+  document.querySelector('#track-select-overlay .popup-title').textContent = vote ? 'VOTE FOR TRACK' : 'SELECT TRACK';
+  $('track-select-confirm').textContent = vote ? 'VOTE ▶' : 'RACE ▶';
+  document.querySelector('#track-select-overlay .btn-icon').style.display = mode === 'split' ? 'none' : '';
   const list = $('track-select-list');
   list.innerHTML = '';
   const pick = btn => { list.querySelectorAll('.track-btn').forEach(b => b.classList.remove('selected')); btn.classList.add('selected'); };
   for (let i = -1; i < CT.TRACKS.length; i++) list.appendChild(trackButton(i, pick));
   $('track-select-overlay').classList.remove('hidden');
 };
-window.closeTrackSelect = function () { $('track-select-overlay').classList.add('hidden'); };
+window.closeTrackSelect = function () { if (_trackSelectMode === 'split') return; $('track-select-overlay').classList.add('hidden'); };
 window.confirmTrackSelect = function () {
   $('track-select-overlay').classList.add('hidden');
-  if (_trackSelectMode === 'bot') startBotRace(); else goToCutscene();
+  if (_trackPending) { const f = _trackPending; _trackPending = null; f(); }
+  else if (_trackSelectMode === 'bot') startBotRace(); else goToCutscene();
 };
 
 window.openFriendsPopup = function () { $('friends-popup').classList.remove('hidden'); };
@@ -199,7 +203,7 @@ function _fp_showPanel(id) {
     .forEach(p => $(p).classList.toggle('hidden', p !== id));
 }
 
-const FP_MODE_LABELS = {'1v1': '1v1', 'team': 'TEAM 6', '10': '10P', '20': '20P', '30': '30P'};
+const FP_MODE_LABELS = {'1v1': '1v1', 'team': 'TEAM 6', '10': '10P'};
 window.fp_create = function () {
   const modesEl = $('fp-mode-btns');
   modesEl.innerHTML = '';
@@ -237,20 +241,24 @@ window.fp_numpadBack = function () { fpNumpadDigits = fpNumpadDigits.slice(0, -1
 window.fp_numpadDone = function () {
   if (fpNumpadDigits.length < 5) return;
   const code = fpNumpadDigits;
+  openTrackSelect('friends', () => fp_go(code));
+};
+function fp_go(code) {
   dropSocket();
   if (fpNumpadMode === 'create') {
     $('fp-code').textContent = code;
-    const labels = {'1v1': '1v1', 'team': 'TEAM 6', '10': '10 PLAYERS', '20': '20 PLAYERS', '30': '30 PLAYERS'};
+    const labels = {'1v1': '1v1', 'team': 'TEAM 6', '10': '10 PLAYERS'};
     $('fp-mode-chosen').textContent = 'MODE: ' + labels[fpSelectedMode];
     $('fp-players-list').innerHTML = '';
     emitWhenReady('create_private', {name: playerName(), vh: custom.vehicle, customData: custom, mode: fpSelectedMode, code, trackType: selectedTrackType >= 0 ? selectedTrackType : undefined});
     _fp_showPanel('fp-create-panel');
   } else {
     $('fp-connecting-code').textContent = code.split('').join(' ');
-    emitWhenReady('join_private', {code, name: playerName(), vh: custom.vehicle, customData: custom});
+    $('lobby-title').textContent = 'PRIVATE LOBBY — CODE: ' + code;
+    emitWhenReady('join_private', {code, name: playerName(), vh: custom.vehicle, customData: custom, trackType: selectedTrackType >= 0 ? selectedTrackType : undefined});
     _fp_showPanel('fp-connecting-panel');
   }
-};
+}
 window.fp_numpadCancel = () => _fp_showPanel(fpNumpadMode === 'create' ? 'fp-mode-panel' : 'fp-main');
 window.fp_cancelCreate = function () { dropSocket(); _fp_showPanel('fp-main'); };
 window.fp_cancelConnect = function () { dropSocket(); _fp_showPanel('fp-main'); };
@@ -506,9 +514,6 @@ function _buildPlaneModelPane(pane) {
   }
 }
 
-function _buildTrackPane(pane) {
-  for (let i = -1; i < CT.TRACKS.length; i++) pane.appendChild(trackButton(i, () => buildGarageUI()));
-}
 
 function buildGarageUI() {
   const titleEl = $('garage-title-text'), leftEl = $('garage-header-left'), rightEl = $('garage-header-right');
@@ -524,9 +529,9 @@ function buildGarageUI() {
   }
 
   const tabsEl = $('garage-tabs'), panesEl = $('garage-panes');
-  const tabs = garageMode === 'boat' ? [{id:'hull',label:'HULL'},{id:'accents',label:'ACCENTS'},{id:'decal',label:'DECAL'},{id:'track',label:'TRACK'}]
-    : garageMode === 'plane' ? [{id:'model',label:'MODEL'},{id:'fuselage',label:'FUSELAGE'},{id:'wings',label:'WINGS'},{id:'decal',label:'DECAL'},{id:'track',label:'TRACK'}]
-    : [{id:'vehicle',label:'VEHICLE'},{id:'paint',label:'PAINT'},{id:'wheels',label:'WHEELS'},{id:'trims',label:'TRIMS'},{id:'exhaust',label:'EXHAUST'},{id:'decal',label:'DECAL'},{id:'track',label:'TRACK'}];
+  const tabs = garageMode === 'boat' ? [{id:'hull',label:'HULL'},{id:'accents',label:'ACCENTS'},{id:'decal',label:'DECAL'}]
+    : garageMode === 'plane' ? [{id:'model',label:'MODEL'},{id:'fuselage',label:'FUSELAGE'},{id:'wings',label:'WINGS'},{id:'decal',label:'DECAL'}]
+    : [{id:'vehicle',label:'VEHICLE'},{id:'paint',label:'PAINT'},{id:'wheels',label:'WHEELS'},{id:'trims',label:'TRIMS'},{id:'exhaust',label:'EXHAUST'},{id:'decal',label:'DECAL'}];
   if (!tabs.find(t => t.id === activeGarageTab)) activeGarageTab = tabs[0].id;
   _makeTabs(tabsEl, tabs);
   panesEl.innerHTML = '';
@@ -539,7 +544,6 @@ function buildGarageUI() {
     case 'model':    _buildPlaneModelPane(pane); break;
     case 'exhaust':  _buildOptPane(pane, EXHAUSTS, 'exhaust', e => e.id === 'none' ? '' : `<span class="opt-swatch" style="background:${hexCss(e.col)};box-shadow:0 0 6px ${hexCss(e.col)}"></span>`); break;
     case 'decal':    _buildOptPane(pane, STICKERS, 'sticker'); break;
-    case 'track':    _buildTrackPane(pane); break;
     case 'hull':     _buildColorPane(pane, 'HULL COLOR', 'boatHullPaint'); break;
     case 'accents':  _buildColorPane(pane, 'ACCENT / STRIPE', 'boatAccentPaint'); break;
     case 'fuselage': _buildColorPane(pane, 'FUSELAGE COLOR', 'planeLiveryPaint'); break;
@@ -1201,13 +1205,13 @@ function setupSocket(s) {
       setTimeout(() => { f.style.transition = 'opacity .25s'; f.style.opacity = 0; }, 1000);
     }
   });
-  s.on('lobby_tick', ({remain}) => { if (gamePhase === 'lobby') startLobbyTimer(remain); });
+  s.on('lobby_tick', ({remain}) => { if (gamePhase === 'lobby' && !SPLIT && !isBotRace) startLobbyTimer(remain); });
   s.on('lobby_update', ({count, max, players}) => updateLobbyPlayers(players, count, max));
 
   s.on('private_created', ({code, carId, trackName}) => {
     myCarId = carId;
     $('fp-code').textContent = code;
-    $('lobby-title').textContent = 'PRIVATE LOBBY — CODE: ' + code;
+    if (!SPLIT) $('lobby-title').textContent = 'PRIVATE LOBBY — CODE: ' + code;
   });
 
   s.on('join_error', ({msg}) => { if (SPLIT) return splitJoinRetry(); alert(msg); _fp_showPanel('fp-main'); dropSocket(); });
@@ -1216,8 +1220,7 @@ function setupSocket(s) {
     myCarId = carId;
     if (gamePhase !== 'lobby') { closeFriendsPopup(); showScreen('lobby'); gamePhase = 'lobby'; }
     const pinger = setInterval(() => { if (gamePhase === 'lobby' && socket === s) s.emit('lobby_timer'); else clearInterval(pinger); }, 800);
-    startLobbyTimer(remain !== undefined ? remain : 120000);
-    if (trackName) $('lobby-title').textContent = 'TRACK: ' + trackName;
+    if (!SPLIT && !isBotRace) startLobbyTimer(remain !== undefined ? remain : 120000);
   });
 
   s.on('race_start', ({cars: list, st, trackName}) => {

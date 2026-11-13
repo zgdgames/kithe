@@ -544,7 +544,6 @@ function makeCarMesh(vhId, c) {
       const f = new THREE.CylinderGeometry(fr, fr, ww + 0.1, 12, 1, true, 0, Math.PI);
       f.rotateZ(Math.PI / 2); f.translate(sx * wx, wr, sz * S.wb);
       body.push(f);
-      body.push(gBox(ww + 0.1, 0.06, fr * 2, sx * wx, wr - 0.03 + 0.001, sz * S.wb));
     }
     const dz0 = -S.wb + fr * 0.8, dz1 = S.wb - fr * 0.8;
     body.push(gBox(0.24, dh, dz1 - dz0, sx * (W / 2 - 0.13), 0.32 + dh / 2, (dz0 + dz1) / 2));

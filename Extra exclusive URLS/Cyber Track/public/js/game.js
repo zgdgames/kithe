@@ -316,8 +316,10 @@ function initGarage() {
 }
 
 function refreshGarageCar() {
+  const turn = garageCarMesh ? garageCarMesh.rotation.y : 0;
   if (garageCarMesh) { garageScene.remove(garageCarMesh); disposeGroup(garageCarMesh); }
   garageCarMesh = makeVehicleMesh(garageMode, custom.vehicle, custom);
+  garageCarMesh.rotation.y = turn;
   garageCarMesh.position.set(0, garageMode === 'plane' ? 2.2 : garageMode === 'boat' ? 0.55 : 0.3, 0);
   garageCarMesh.scale.setScalar((garageMode === 'car' ? 1.25 : 1) * (garageCarMesh.userData.gs || 1));
   garageScene.add(garageCarMesh);

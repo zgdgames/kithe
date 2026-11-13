@@ -209,16 +209,21 @@ function resolvePadFocus(root) {
 }
 function movePadFocus(list, dx, dy) {
   if (!padFocusEl) return;
-  const a = centre(padFocusEl);
-  let best = null, bs = Infinity;
+  const a = centre(padFocusEl), ra = padFocusEl.getBoundingClientRect();
+  let best = null, bs = Infinity, lined = null, ls = Infinity;
   for (const e of list) {
     if (e === padFocusEl) continue;
-    const c = centre(e), ox = c.x - a.x, oy = c.y - a.y;
+    const c = centre(e), r = e.getBoundingClientRect(), ox = c.x - a.x, oy = c.y - a.y;
     const along = ox * dx + oy * dy, across = Math.abs(ox * dy) + Math.abs(oy * dx);
     if (along < 6) continue;
+    const overlap = dx ? Math.min(r.bottom, ra.bottom) - Math.max(r.top, ra.top) : Math.min(r.right, ra.right) - Math.max(r.left, ra.left);
+    if (overlap > 4) { if (along < ls) { ls = along; lined = e; } continue; }
+    if (across > along * 1.6) continue;
     const sc = along + across * 2.4;
     if (sc < bs) { bs = sc; best = e; }
   }
+  best = lined || best;
+  if (!best && dx) best = list[list.indexOf(padFocusEl) + dx] || null;
   if (best) { setPadFocus(best); Snd.sfx('click', 0.4); }
 }
 function scrollTarget(root) {

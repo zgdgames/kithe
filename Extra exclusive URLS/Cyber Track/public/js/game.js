@@ -3,7 +3,7 @@
 // PERSISTENT STATE
 // ═══════════════════════════════════════════════════════════════════════
 let wins = parseInt(localStorage.getItem('ct_wins') || '0') || 0;
-const SPLIT = (() => { const q = new URLSearchParams(location.search), sp = +q.get('sp'); return sp ? {p: sp, dev: q.get('dev') || 'kb', room: q.get('room') || 'LOCAL', n: 0} : null; })();
+const SPLIT = (() => { const q = new URLSearchParams(location.search || location.hash.slice(1)), sp = +q.get('sp'); return sp ? {p: sp, dev: q.get('dev') || 'kb', room: q.get('room') || 'LOCAL', n: 0} : null; })();
 const CUSTOM_KEY = SPLIT && SPLIT.p === 2 ? 'ct_custom_p2' : 'ct_custom';
 let custom;
 try { custom = JSON.parse(localStorage.getItem(CUSTOM_KEY) || localStorage.getItem('ct_custom') || 'null') || {}; }

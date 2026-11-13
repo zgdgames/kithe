@@ -607,7 +607,7 @@ window.startSplit = function () {
   splitFrames = [0, 1].map(p => {
     const f = document.createElement('iframe');
     f.allow = 'gamepad; microphone; autoplay';
-    f.src = `/?sp=${p + 1}&dev=${splitPick[p]}&room=${room}`;
+    f.src = `${window.CT_FRAME || '/?'}sp=${p + 1}&dev=${splitPick[p]}&room=${room}`;
     view.appendChild(f);
     return f;
   });
